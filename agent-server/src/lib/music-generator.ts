@@ -3,7 +3,7 @@ import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs'
 import path from 'node:path'
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY
-if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is required for music generation (AI Studio key)')
+if (!GEMINI_API_KEY) console.warn('[music-gen] GEMINI_API_KEY not set — music generation disabled')
 
 // Lyria requires AI Studio, but GOOGLE_GENAI_USE_VERTEXAI=true forces Vertex globally.
 // The SDK has no per-instance override, so we toggle the env var during construction.
@@ -162,6 +162,8 @@ export class MusicGenerator {
   }
 
   async generate(options: GenerateMusicOptions): Promise<GenerateMusicResult> {
+    if (!GEMINI_API_KEY) throw new Error('Music generation unavailable — GEMINI_API_KEY not configured')
+
     const duration = Math.min(Math.max(options.durationSeconds ?? 60, 60), 120)
     const hintBpm = Math.min(Math.max(options.bpm ?? 120, 60), 200)
     const hintTemperature = options.temperature ?? 1.0
