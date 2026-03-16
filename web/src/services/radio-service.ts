@@ -34,7 +34,7 @@ const PULSE_STATION: Station = {
   isDefault: true,
 };
 
-function createInitialState(): RadioState {
+export function createInitialState(): RadioState {
   return {
     isLive: false,
     isPlaying: false,
