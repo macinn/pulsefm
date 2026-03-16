@@ -5,6 +5,7 @@ import type {
   CallMode,
   CallRouting,
 } from "@/types/radio";
+import { getApiUrl, getWsUrl } from "@/lib/config";
 
 export interface RadioService {
   getState(): RadioState;
@@ -15,8 +16,6 @@ export interface RadioService {
   endCall(): void;
   sendCallerAudio(base64Pcm: string): void;
 }
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 const MOCK_SOURCES: SourceStatus[] = [
   { type: "rss", label: "RSS Feeds", active: true, lastUpdate: Date.now() - 35000, itemCount: 23 },
@@ -144,12 +143,7 @@ export class WebSocketRadioService implements RadioService {
 
   constructor(wsUrl?: string) {
     this.state = createInitialState();
-    if (wsUrl) {
-      this.wsUrl = wsUrl;
-    } else {
-      const base = API_URL.replace(/^http/, "ws");
-      this.wsUrl = `${base}/ws/radio`;
-    }
+    this.wsUrl = wsUrl ?? getWsUrl();
     // Connect immediately for status updates
     this.connectWs();
   }

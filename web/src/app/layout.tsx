@@ -29,8 +29,16 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
   return (
     <html lang="en">
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `window.__PULSE_API_URL=${JSON.stringify(apiUrl)};`,
+          }}
+        />
+      </head>
       <body
         className={`${syne.variable} ${spaceGrotesk.variable} ${instrumentSerif.variable} antialiased`}
       >

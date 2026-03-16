@@ -8,11 +8,6 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
-
-# Build-time env: backend URL will be set during deploy
-ARG NEXT_PUBLIC_API_URL
-ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
-
 RUN npm run build
 
 # --- Production stage ---

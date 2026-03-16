@@ -1,15 +1,15 @@
 import type { DaySchedule, ScheduleBlock, BlockConfig, BlockType } from '@/types/schedule'
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+import { getApiUrl } from '@/lib/config'
 
 export async function fetchSchedule(date: string): Promise<DaySchedule> {
-  const res = await fetch(`${API}/schedule/${date}`)
+  const res = await fetch(`${getApiUrl()}/schedule/${date}`)
   if (!res.ok) throw new Error(`Failed to fetch schedule: ${res.status}`)
   return res.json()
 }
 
 export async function saveSchedule(date: string, blocks: ScheduleBlock[]): Promise<void> {
-  const res = await fetch(`${API}/schedule/${date}`, {
+  const res = await fetch(`${getApiUrl()}/schedule/${date}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ blocks }),
@@ -21,7 +21,7 @@ export async function addBlock(
   date: string,
   block: { type: BlockType; title: string; startTime: string; durationMinutes: number; config: BlockConfig }
 ): Promise<ScheduleBlock> {
-  const res = await fetch(`${API}/schedule/${date}/blocks`, {
+  const res = await fetch(`${getApiUrl()}/schedule/${date}/blocks`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(block),
@@ -35,7 +35,7 @@ export async function updateBlock(
   blockId: string,
   partial: Partial<ScheduleBlock>
 ): Promise<ScheduleBlock> {
-  const res = await fetch(`${API}/schedule/${date}/blocks/${blockId}`, {
+  const res = await fetch(`${getApiUrl()}/schedule/${date}/blocks/${blockId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(partial),
@@ -45,14 +45,14 @@ export async function updateBlock(
 }
 
 export async function deleteBlock(date: string, blockId: string): Promise<void> {
-  const res = await fetch(`${API}/schedule/${date}/blocks/${blockId}`, {
+  const res = await fetch(`${getApiUrl()}/schedule/${date}/blocks/${blockId}`, {
     method: 'DELETE',
   })
   if (!res.ok) throw new Error(`Failed to delete block: ${res.status}`)
 }
 
 export async function skipBlock(date: string, blockId: string): Promise<ScheduleBlock> {
-  const res = await fetch(`${API}/schedule/${date}/blocks/${blockId}/skip`, {
+  const res = await fetch(`${getApiUrl()}/schedule/${date}/blocks/${blockId}/skip`, {
     method: 'POST',
   })
   if (!res.ok) throw new Error(`Failed to skip block: ${res.status}`)
@@ -60,14 +60,14 @@ export async function skipBlock(date: string, blockId: string): Promise<Schedule
 }
 
 export async function executeBlock(date: string, blockId: string): Promise<void> {
-  const res = await fetch(`${API}/schedule/${date}/blocks/${blockId}/execute`, {
+  const res = await fetch(`${getApiUrl()}/schedule/${date}/blocks/${blockId}/execute`, {
     method: 'POST',
   })
   if (!res.ok) throw new Error(`Failed to execute block: ${res.status}`)
 }
 
 export async function fetchTracks(): Promise<string[]> {
-  const res = await fetch(`${API}/media/tracks`)
+  const res = await fetch(`${getApiUrl()}/media/tracks`)
   if (!res.ok) return []
   const data = await res.json()
   return data.tracks ?? []

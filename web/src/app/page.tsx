@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { RadioProvider } from "@/components/RadioProvider";
 import { MediaProvider } from "@/components/MediaProvider";
 import ContentArea from "@/components/ContentArea";

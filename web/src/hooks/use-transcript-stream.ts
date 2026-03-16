@@ -25,8 +25,7 @@ export interface TranscriptStreamState {
 
 const MAX_ENTRIES = 500;
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
-const DEFAULT_WS_URL = `${API_URL.replace(/^http/, "ws")}/ws/radio`;
+import { getWsUrl } from "@/lib/config";
 
 /**
  * Reusable hook that connects to the Pulse radio WebSocket and streams
@@ -38,7 +37,7 @@ export function useTranscriptStream(
   onRawMessage?: (msg: Record<string, unknown>) => void,
 ): TranscriptStreamState {
   const resolvedUrl = useMemo(
-    () => wsUrl ?? DEFAULT_WS_URL,
+    () => wsUrl ?? getWsUrl(),
     [wsUrl],
   );
 

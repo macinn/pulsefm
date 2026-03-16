@@ -38,7 +38,7 @@ import BlockEditor from "@/components/admin/BlockEditor";
 import NewsPanel from "@/components/admin/NewsPanel";
 import type { ScheduleBlock, TopicConfig, BlockConfig, BlockType } from "@/types/schedule";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+import { getApiUrl } from "@/lib/config";
 
 interface ServerStatus {
   presenting: boolean;
@@ -91,7 +91,7 @@ export default function AdminPage() {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/radio/status`);
+      const res = await fetch(`${getApiUrl()}/radio/status`);
       const { presenting, listeners, activeBlockType } = await res.json();
       setStatus({ presenting, listeners, activeBlockType });
     } catch {
@@ -101,7 +101,7 @@ export default function AdminPage() {
 
   const fetchMusicLibrary = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/radio/music/list`);
+      const res = await fetch(`${getApiUrl()}/radio/music/list`);
       const data = await res.json();
       if (Array.isArray(data)) setMusicLibrary(data);
     } catch { /* ignore */ }
@@ -133,7 +133,7 @@ export default function AdminPage() {
   async function action(endpoint: string, label: string) {
     setLoading(label);
     try {
-      const res = await fetch(`${API}${endpoint}`, { method: "POST" });
+      const res = await fetch(`${getApiUrl()}${endpoint}`, { method: "POST" });
       await res.json();
       await fetchStatus();
     } catch (err) {
@@ -152,7 +152,7 @@ export default function AdminPage() {
     if (musicGenStatus.status !== "generating") return;
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`${API}/radio/music/status`);
+        const res = await fetch(`${getApiUrl()}/radio/music/status`);
         const data = await res.json();
         setMusicGenStatus(data);
         if (data.status !== "generating") clearInterval(interval);
@@ -166,7 +166,7 @@ export default function AdminPage() {
     if (!prompt) return;
     setMusicGenStatus({ status: "generating", prompt });
     try {
-      await fetch(`${API}/radio/music/generate`, {
+      await fetch(`${getApiUrl()}/radio/music/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt, durationSeconds: musicDuration, bpm: musicBpm }),
@@ -179,7 +179,7 @@ export default function AdminPage() {
 
   async function handlePlayTrack(filename: string) {
     try {
-      await fetch(`${API}/radio/music/play`, {
+      await fetch(`${getApiUrl()}/radio/music/play`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename }),
@@ -196,7 +196,7 @@ export default function AdminPage() {
     // Find the latest block end time to avoid overlap
     let startTime: string;
     try {
-      const res = await fetch(`${API}/schedule/${date}`);
+      const res = await fetch(`${getApiUrl()}/schedule/${date}`);
       const schedule = await res.json();
       const blocks: Array<{ startTime: string; durationMinutes: number }> = schedule?.blocks ?? [];
       if (blocks.length > 0) {
@@ -226,7 +226,7 @@ export default function AdminPage() {
     }
 
     try {
-      await fetch(`${API}/schedule/${date}/blocks`, {
+      await fetch(`${getApiUrl()}/schedule/${date}/blocks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -358,7 +358,7 @@ export default function AdminPage() {
                   if (!text || sendingInject) return;
                   setSendingInject(true);
                   try {
-                    const res = await fetch(`${API}/radio/inject`, {
+                    const res = await fetch(`${getApiUrl()}/radio/inject`, {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ type: injectType, text }),
@@ -467,7 +467,7 @@ export default function AdminPage() {
                     <button
                       onClick={() => {
                         if (!previewAudioRef.current) {
-                          previewAudioRef.current = new Audio(`${API}/radio/music/file/${musicGenStatus.filename}`);
+                          previewAudioRef.current = new Audio(`${getApiUrl()}/radio/music/file/${musicGenStatus.filename}`);
                           previewAudioRef.current.onended = () => setPreviewPlaying(false);
                         }
                         if (previewPlaying) {
@@ -600,7 +600,7 @@ export default function AdminPage() {
               canInject={canInject}
               onInjectNews={async (type, text, imageUrl, imageUrls, turnPrompts) => {
                 try {
-                  await fetch(`${API}/radio/inject`, {
+                  await fetch(`${getApiUrl()}/radio/inject`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ type, text, imageUrl, turnPrompts }),
@@ -738,7 +738,7 @@ export default function AdminPage() {
                                   setLibPreviewFilename(null);
                                 } else {
                                   libAudioRef.current?.pause();
-                                  const audio = new Audio(`${API}/radio/music/file/${track.filename}`);
+                                  const audio = new Audio(`${getApiUrl()}/radio/music/file/${track.filename}`);
                                   audio.onended = () => setLibPreviewFilename(null);
                                   libAudioRef.current = audio;
                                   audio.play();
@@ -820,7 +820,7 @@ export default function AdminPage() {
           onSaved={() => {
             setScheduleRefreshKey((k) => k + 1);
             if (pendingBriefId) {
-              fetch(`${API}/news/pulse-ai/briefs/${pendingBriefId}/send`, {
+              fetch(`${getApiUrl()}/news/pulse-ai/briefs/${pendingBriefId}/send`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ method: "block" }),

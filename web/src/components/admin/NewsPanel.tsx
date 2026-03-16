@@ -29,8 +29,8 @@ import {
   ArrowUpCircle,
   BookOpenCheck,
 } from "lucide-react";
+import { getApiUrl } from "@/lib/config";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 const STATION_ID = "pulse-ai";
 
 type ConfidenceLevel = "confirmed" | "developing" | "rumor";
@@ -138,7 +138,7 @@ export default function NewsPanel({ onInjectNews, onCreateBlock, isPresenting, c
 
   const fetchBriefs = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/news/${STATION_ID}/briefs`);
+      const res = await fetch(`${getApiUrl()}/news/${STATION_ID}/briefs`);
       if (res.ok) {
         const data: EditorialBrief[] = await res.json();
         setBriefs(data.sort((a, b) => b.priority - a.priority));
@@ -159,14 +159,14 @@ export default function NewsPanel({ onInjectNews, onCreateBlock, isPresenting, c
     setScanning(true);
     setScanResult(null);
     try {
-      const scanRes = await fetch(`${API}/news/${STATION_ID}/scan`, { method: "POST" });
+      const scanRes = await fetch(`${getApiUrl()}/news/${STATION_ID}/scan`, { method: "POST" });
       const scanData = await scanRes.json();
       setScanResult(scanData);
 
       setScanning(false);
       setProcessing(true);
 
-      const processRes = await fetch(`${API}/news/${STATION_ID}/process`, { method: "POST" });
+      const processRes = await fetch(`${getApiUrl()}/news/${STATION_ID}/process`, { method: "POST" });
       const processData = await processRes.json();
       setScanResult((prev) => prev ? { ...prev, researched: processData.researched } : prev);
       await fetchBriefs();
@@ -180,7 +180,7 @@ export default function NewsPanel({ onInjectNews, onCreateBlock, isPresenting, c
 
   async function sendBrief(briefId: string, method: string) {
     try {
-      const res = await fetch(`${API}/news/${STATION_ID}/briefs/${briefId}/send`, {
+      const res = await fetch(`${getApiUrl()}/news/${STATION_ID}/briefs/${briefId}/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ method }),
@@ -196,7 +196,7 @@ export default function NewsPanel({ onInjectNews, onCreateBlock, isPresenting, c
 
   async function concludeBrief(briefId: string) {
     try {
-      const res = await fetch(`${API}/news/${STATION_ID}/briefs/${briefId}/conclude`, { method: "POST" });
+      const res = await fetch(`${getApiUrl()}/news/${STATION_ID}/briefs/${briefId}/conclude`, { method: "POST" });
       if (res.ok) {
         const updated: EditorialBrief = await res.json();
         setBriefs((prev) => prev.map((b) => (b.id === briefId ? updated : b)));
@@ -209,7 +209,7 @@ export default function NewsPanel({ onInjectNews, onCreateBlock, isPresenting, c
   async function handleResearch(briefId: string) {
     setResearchingId(briefId);
     try {
-      const res = await fetch(`${API}/news/${STATION_ID}/briefs/${briefId}/research`, { method: "POST" });
+      const res = await fetch(`${getApiUrl()}/news/${STATION_ID}/briefs/${briefId}/research`, { method: "POST" });
       if (res.ok) {
         const enriched: EditorialBrief = await res.json();
         setBriefs((prev) => prev.map((b) => (b.id === briefId ? enriched : b)));

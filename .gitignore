@@ -12,7 +12,6 @@ build/
 .env
 .env.local
 .env.*.local
-!web/.env.production
 
 # OS files
 .DS_Store
