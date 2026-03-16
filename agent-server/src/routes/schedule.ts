@@ -170,7 +170,7 @@ export function createScheduleRoutes(
     if (!DATE_RE.test(date)) return c.json({ error: 'Invalid date format' }, 400)
     if (!schedulePlanner) return c.json({ error: 'Schedule planner not configured' }, 501)
 
-    const body = await c.req.json<{ windowHours?: number; stationId?: string; scanFirst?: boolean }>().catch(() => ({}))
+    const body = await c.req.json<{ windowHours?: number; stationId?: string; scanFirst?: boolean }>().catch((): { windowHours?: number; stationId?: string; scanFirst?: boolean } => ({}))
     const stationId = body.stationId || 'pulse-ai'
     const windowHours = body.windowHours || 3
     const scanFirst = body.scanFirst ?? false

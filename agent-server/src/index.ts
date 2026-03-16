@@ -907,7 +907,7 @@ app.get('/radio/music/list', (c) => {
 
 app.post('/radio/music/generate-batch', async (c) => {
   if (musicScheduler.isGenerating()) return c.json({ error: 'A batch is already in progress' }, 409)
-  const body = await c.req.json<{ count?: number }>().catch(() => ({}))
+  const body = await c.req.json<{ count?: number }>().catch((): { count?: number } => ({}))
   const count = body.count ?? 10
   pushTranscript('system', `Music batch generation started: ${count} tracks`)
   musicScheduler.generateBatch(count).then((result) => {
