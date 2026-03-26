@@ -17,21 +17,21 @@ flowchart TB
     subgraph BACKEND["Agent Server — Hono / TypeScript / Node.js"]
         direction TB
 
-        subgraph LIVE["Gemini Live Sessions — Real-Time Audio"]
+        subgraph LIVE["ElevenLabs Voice Sessions — Real-Time Audio"]
             direction LR
-            PULSE["Presenter\nPulse\nVoice: Orus"]
-            NOVA["Co-Host\nNova\nVoice: Leda"]
+            PULSE["Presenter\nPulse\nVoice: Daniel"]
+            NOVA["Co-Host\nNova\nVoice: Lily"]
             GUEST["Guest\nExpert\nVoice: Configurable"]
-            SCREEN["Screener\nKore\nVoicemail"]
+            SCREEN["Screener\nJessica\nRelay Messages"]
         end
 
         subgraph AGENTS["News Agent Pipeline"]
             direction LR
             subgraph SCOUTS["Scouts"]
+                FIRECRAWL_SCAN["Firecrawl Scanner\nFirecrawl Search API"]
                 RSS["RSS Scanner\nTechCrunch, Verge"]
                 REDDIT["Reddit Scout\nr/ML, r/artificial"]
                 TREND["Trending Scout\nGoogle Search"]
-                NEWSDATA["NewsData Scanner\nNewsData.io API"]
             end
             EDITOR["Editor Agent\nDedup · Priority\nConfidence · Breaking"]
             ENRICH["Article Enricher\nSource Fetch · Report\n10-15 Turn Prompts"]
@@ -49,24 +49,28 @@ flowchart TB
         subgraph MEDIA["Media"]
             direction LR
             MPLAYER["Music Player\nWAV 24kHz streaming"]
-            MGEN["Music Generator\nLyria RealTime API"]
+            MGEN["Music Generator\nElevenLabs Music API"]
         end
     end
 
     subgraph GOOGLE["Google AI APIs"]
         direction LR
-        GLIVE["Gemini Live API\ngemini-live-2.5-flash\n-native-audio"]
         GPRO["Gemini 3.1 Pro\nEditor · Planner"]
         GFLASH["Gemini 3.1 Flash Lite\nEnricher · Research\nTrending"]
         GEMBED["Text Embeddings\ntext-embedding-004\nNews Dedup"]
-        LYRIA["Lyria RealTime\nAI Music Generation"]
+    end
+
+    subgraph ELEVENLABS["ElevenLabs APIs"]
+        direction LR
+        ELVOICE["Conversational AI\nVoice Agents (WebSocket)"]
+        ELMUSIC["Music API\nAI Music Generation"]
     end
 
     subgraph EXTERNAL["External Data Sources"]
         direction LR
+        FIRECRAWLAPI["Firecrawl\nSearch + Scrape"]
         RSSF["RSS Feeds"]
         REDDITAPI["Reddit JSON API"]
-        NEWSDATAAPI["NewsData.io"]
         GSEARCH["Google Search\nGrounding"]
     end
 
@@ -82,7 +86,7 @@ flowchart TB
     FRONTEND <--> WS
     WS <--> BACKEND
 
-    LIVE --- GLIVE
+    LIVE --- ELVOICE
     SCOUTS --> EDITOR --> ENRICH
     ENRICH -.->|thin info| RESEARCH
     RESEARCH --> ENRICH
@@ -95,11 +99,13 @@ flowchart TB
     SCHED -->|music blocks| MPLAYER
     MEMORY -.->|context| PULSE
 
+    FIRECRAWL_SCAN --- FIRECRAWLAPI
     RSS --- RSSF
     REDDIT --- REDDITAPI
-    NEWSDATA --- NEWSDATAAPI
     TREND --- GSEARCH
     RESEARCH --- GSEARCH
+    ENRICH --- FIRECRAWLAPI
+    RESEARCH --- FIRECRAWLAPI
 
     EDITOR --- GPRO
     ENRICH --- GFLASH
@@ -107,7 +113,7 @@ flowchart TB
     TREND --- GFLASH
     PLANNER --- GPRO
 
-    MGEN --- LYRIA
+    MGEN --- ELMUSIC
 
     BACKEND --- STORAGE
 ```

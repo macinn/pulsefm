@@ -1,7 +1,7 @@
-import { connectGeminiLive, type GeminiLiveSession, type GeminiVoice } from './gemini-live.js'
+import { connectElevenLabs, type ElevenLabsSession } from './elevenlabs-live.js'
+import { getAgentIds } from './agent-provision.js'
 
 export const COHOST_NAME = 'Nova'
-export const COHOST_VOICE: GeminiVoice = 'Leda'
 
 export interface CohostCallbacks {
   onAudio(base64Pcm: string): void
@@ -44,8 +44,11 @@ export async function createCohostSession(
 ): Promise<CohostSession> {
   let transcriptBuffer = ''
 
-  const session: GeminiLiveSession = await connectGeminiLive(
-    buildCohostInstruction(topic),
+  const session: ElevenLabsSession = await connectElevenLabs(
+    {
+      agentId: getAgentIds().cohost,
+      overrides: { prompt: buildCohostInstruction(topic) },
+    },
     {
       onAudio(base64Pcm) {
         callbacks.onAudio(base64Pcm)
@@ -68,15 +71,12 @@ export async function createCohostSession(
       onError: callbacks.onError,
       onClose: callbacks.onClose,
     },
-    COHOST_VOICE
   )
 
   return {
     discuss(hostText: string) {
-      session.sendText(
-        `Pulse just said: "${hostText}". Respond with your take — share your perspective, ` +
-        `build on their point, or offer a different angle. Be concise and engaging.`
-      )
+      session.sendContextualUpdate(`Pulse just said: "${hostText}"`)
+      session.sendText('Share your perspective on what Pulse just said.')
     },
     close() {
       session.close()

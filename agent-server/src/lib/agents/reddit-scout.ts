@@ -81,6 +81,8 @@ export class RedditScout {
         imageUrls.push(d.thumbnail)
       }
 
+      const publishedAt = d.created_utc * 1000
+
       candidates.push({
         id: `reddit-${d.id}`,
         headline: d.title.trim(),
@@ -90,10 +92,11 @@ export class RedditScout {
           : d.url,
         source: 'reddit',
         sourceLabel: `r/${d.subreddit}`,
-        detectedAt: d.created_utc * 1000,
+        detectedAt: publishedAt,
         rawScore: scoreFromUpvotes(d.score),
         ...(imageUrl ? { imageUrl } : {}),
         ...(imageUrls.length > 0 ? { imageUrls } : {}),
+        publishedAt,
       })
     }
 

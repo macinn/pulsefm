@@ -1,8 +1,14 @@
 # Pulse — AI-Powered Live Radio
 
-> A fully autonomous AI radio station that broadcasts 24/7, monitors real-time news, and takes live caller interactions — built for the **Google Gemini Live Agent Challenge** (Live Agents category).
+> A fully autonomous AI radio station that broadcasts 24/7, monitors real-time news, and takes live caller interactions — built for the **Combine Firecrawl Search with ElevenAgents** hackathon.
 
 Pulse is not a chatbot. It is a persistent, streaming media system: a complete radio newsroom in code form. An AI presenter named **Pulse** speaks continuously with editorial personality, covering AI, startups, and technology. News agents scan sources in real time, an editorial pipeline curates and enriches stories, a schedule planner fills the day, and listeners can call in live to challenge, question, or redirect the broadcast.
+
+### Core Technologies
+
+- **Firecrawl Search** — turns any website into clean, LLM-ready data. The Search API lets agents search the web and get structured content back in a single call, powering the real-time news pipeline with fresh knowledge about anything on the internet.
+- **ElevenLabs Conversational AI (ElevenAgents)** — natural, human-sounding voice agents that access external tools and take actions. Every voice on Pulse (presenter, co-host, guest, screener) is an ElevenAgent with its own personality, voice, and tool set.
+- **Google Gemini** — text LLM backbone (Pro for editorial reasoning and schedule planning, Flash Lite for fast enrichment and research, embeddings for deduplication).
 
 ---
 
@@ -28,10 +34,10 @@ Pulse speaks without stopping. The presenter maintains a coherent narrative acro
 
 ### Real-Time News Monitoring
 Four independent scouts poll news sources in parallel:
+- **Firecrawl Scanner** — searches the live web via Firecrawl Search API for keyword-matched articles, returning structured, LLM-ready content in a single call. This is the primary source of real-time news intelligence.
 - **RSS Scanner** — TechCrunch, The Verge, and configurable feeds
 - **Reddit Scout** — r/MachineLearning, r/artificial, scored by upvote velocity
 - **Trending Scout** — Google Search grounding via Gemini for emerging stories
-- **NewsData Scanner** — NewsData.io API with image-first filtering
 
 Candidates flow into an **Editor Agent** that deduplicates (embedding-based cosine similarity), assigns confidence levels (confirmed / developing / rumor), detects breaking news, and prioritizes by relevance.
 
@@ -51,22 +57,22 @@ An **Auto-Pilot** orchestrates the full pipeline: scan every 60 minutes, process
 
 ### Live Caller Integration
 Listeners connect from the webapp via microphone (or camera). The system routes calls based on line status:
-- **Lines open** (during scheduled call-in segments): caller audio goes directly to the presenter's Gemini Live session. Pulse hears the caller in real time, responds naturally, and integrates the interaction on-air with full barge-in support.
-- **Lines closed**: a **Screener Agent** (voice: Kore) greets the caller, records a voicemail, and stores the transcript for the admin. Screener audio is private — it never reaches the broadcast.
+- **Lines open** (during scheduled call-in segments): caller audio goes directly to the presenter's ElevenLabs session. Pulse hears the caller in real time, responds naturally, and integrates the interaction on-air with full barge-in support.
+- **Lines closed**: a **Screener Agent** (voice: Jessica) greets the caller privately, captures their message via a `relay_message` tool, and stores structured data (greetings, questions, news tips, song requests) for the presenter. Screener audio never reaches the broadcast.
 
 ### Expert Guest Segments
-The admin (or schedule planner) can launch a guest expert interview. A second Gemini Live session is created with a distinct voice and personality. Presenter and guest exchange turns naturally — each hearing the other's transcript and responding conversationally — until the segment ends.
+The admin (or schedule planner) can launch a guest expert interview. A second ElevenLabs Conversational AI session is created with a distinct voice and personality. Presenter and guest exchange turns naturally — each hearing the other's transcript and responding conversationally — until the segment ends.
 
 ### Co-Host Discussions
 After the presenter exhausts all turn prompts for a story, a co-host named **Nova** (voice: Leda) automatically joins. They exchange takes on the topic for up to 3 turns — agreeing, pushing back, adding angles — before the presenter wraps up. This prevents dead air and adds editorial depth between stories.
 
 ### AI Music Generation
-Powered by Google's **Lyria RealTime API**. When a caller explicitly requests music during a live call, the presenter invokes a tool that generates an original instrumental track. The prompt is first enhanced by an LLM to avoid copyright issues, then sent to Lyria. Output is downsampled from 48kHz stereo to 24kHz mono WAV for broadcast compatibility.
+Powered by the **ElevenLabs Music API**. When a caller explicitly requests music during a live call, the presenter invokes a tool that generates an original instrumental track. The prompt is first enhanced by an LLM to avoid copyright issues, then sent to ElevenLabs. Output is converted to 24kHz mono WAV for broadcast compatibility.
 
 Pre-generated tracks can also be scheduled as transition blocks between news segments.
 
 ### Daily Music Scheduler
-A **Music Scheduler** generates a fresh library of 10 tracks every day at 3 AM, cycling through 20 predefined radio styles (ambient, lo-fi, jazz, synthwave, etc.). Tracks are generated sequentially via Lyria with a 5-second cooldown between each to respect rate limits. The admin can also trigger a batch manually from the Music Library header. This ensures the station always has varied, recent music for transitions without human intervention.
+A **Music Scheduler** generates a fresh library of 10 tracks every 72 hours at 3 AM, cycling through 20 predefined radio styles (ambient, lo-fi, jazz, synthwave, etc.). Tracks are generated sequentially via ElevenLabs Music API with a 5-second cooldown between each to respect rate limits. The admin can also trigger a batch manually from the Music Library header. This ensures the station always has varied, recent music for transitions without human intervention.
 
 ### Wrap-Up Warning and Fill Music
 The scheduler tracks the remaining time in every topic and guest block. **30 seconds before a block ends**, it sends a private wrap-up cue to the presenter ("You have ~30 seconds, start wrapping up"), giving Pulse time to close the segment gracefully instead of being cut off mid-sentence.
@@ -105,17 +111,17 @@ The frontend is a full-screen dark-theme radio player with:
                           │   Hono · TypeScript · Node    │
                           ├─────────────────────────────┤
                           │                              │
-                          │  Gemini Live Sessions        │
-                          │  ├─ Presenter (Pulse/Orus)   │
-                          │  ├─ Co-Host (Nova/Leda)      │
+                          │  ElevenLabs Voice Sessions   │
+                          │  ├─ Presenter (Pulse/Daniel) │
+                          │  ├─ Co-Host (Nova/Lily)      │
                           │  ├─ Guest (configurable)     │
-                          │  └─ Screener (Kore)          │
+                          │  └─ Screener (Jessica)       │
                           │                              │
                           │  News Agents                 │
+                          │  ├─ Firecrawl Scanner        │
                           │  ├─ RSS Scanner              │
                           │  ├─ Reddit Scout             │
                           │  ├─ Trending Scout           │
-                          │  ├─ NewsData Scanner         │
                           │  ├─ Editor Agent             │
                           │  ├─ Research Agent           │
                           │  ├─ Article Enricher         │
@@ -129,19 +135,18 @@ The frontend is a full-screen dark-theme radio player with:
                           │                              │
                           │  Media                       │
                           │  ├─ Music Player (WAV)       │
-                          │  └─ Music Generator (Lyria)  │
+                          │  └─ Music Generator (11Labs) │
                           │                              │
                           └──────────┬──────────────────┘
                                      │
                     ┌────────────────┼────────────────┐
                     │                │                │
               Google APIs      External APIs    File Storage
-              ├─ Gemini Live   ├─ RSS Feeds     ├─ schedules/
-              ├─ Gemini Pro    ├─ Reddit JSON   ├─ news/
-              ├─ Gemini Flash  ├─ NewsData.io   ├─ stations/
-              ├─ Lyria Music   │                └─ media/
-              ├─ Google Search │
-              └─ Embeddings    │
+              ├─ Gemini Pro    ├─ RSS Feeds     ├─ schedules/
+              ├─ Gemini Flash  ├─ Reddit JSON   ├─ news/
+              ├─ Embeddings    ├─ Firecrawl     ├─ stations/
+              ├─ Google Search ├─ ElevenLabs    └─ media/
+              │                │
 ```
 
 ### How It All Connects
@@ -163,26 +168,26 @@ A single persistent WebSocket at `/ws/radio` handles everything:
 - **Caller audio** (client → server) — PCM 16kHz from the listener's microphone when they call in.
 - **Status updates** (bidirectional) — radio state changes, schedule updates, call-line status, guest/co-host session events, and image payloads for visual overlays.
 
-#### Agent Server — Gemini Live Sessions
+#### Agent Server — ElevenLabs Voice Sessions
 
-Four concurrent Gemini Live API sessions run inside the backend, each with a distinct personality and voice:
+Four concurrent ElevenLabs Conversational AI sessions run inside the backend, each with a distinct personality and voice:
 
-- **Presenter (Pulse, voice: Orus)** — the main host. Receives editorial briefs as production cues, speaks continuously, handles caller audio with barge-in, and coordinates with the co-host and guest sessions. This session is always active while the radio is on.
-- **Co-Host (Nova, voice: Leda)** — a secondary voice that joins automatically when the presenter finishes all turn prompts for a topic. They exchange up to 3 turns of editorial banter (agreeing, challenging, adding angles) before handing back.
-- **Guest (configurable voice)** — launched by the admin or schedule planner for expert interview segments. A separate Gemini Live session with a custom system instruction describing the guest's expertise and personality.
-- **Screener (Kore)** — active when call-in lines are closed. Greets callers privately, records a voicemail, and stores the transcript for the admin. Its audio never reaches the broadcast.
+- **Presenter (Pulse, voice: Daniel)** — the main host. Receives editorial briefs as production cues, speaks continuously, handles caller audio with barge-in, and coordinates with the co-host and guest sessions. This session is always active while the radio is on.
+- **Co-Host (Nova, voice: Lily)** — a secondary voice that joins automatically when the presenter finishes all turn prompts for a topic. They exchange up to 3 turns of editorial banter (agreeing, challenging, adding angles) before handing back.
+- **Guest (configurable voice)** — launched by the admin or schedule planner for expert interview segments. A separate ElevenLabs session with a custom system instruction describing the guest's expertise and personality.
+- **Screener (Jessica)** — active when call-in lines are closed. Greets callers privately, captures their messages via the `relay_message` tool (greetings, questions, news tips, song requests), and relays structured data back to the presenter as a soft note. Its audio never reaches the broadcast.
 
-All four sessions use the `gemini-live-2.5-flash-native-audio` model with affective dialog enabled.
+All sessions are auto-provisioned at server startup via the ElevenLabs REST API (`agent-provision.ts`). Each agent gets a unique agent ID, custom system prompt, and voice override.
 
 #### Agent Server — News Agent Pipeline
 
 News flows through four stages:
 
 1. **Scouts** — four independent agents poll external sources in parallel:
+   - *Firecrawl Scanner* searches the live web via **Firecrawl Search API**, returning structured, LLM-ready content with metadata and images. This is the main discovery engine — a single call yields clean markdown from any website.
    - *RSS Scanner* parses configured feeds (TechCrunch, The Verge, etc.) using `rss-parser` and filters by URL to avoid duplicates.
    - *Reddit Scout* hits the public Reddit JSON API for monitored subreddits and scores posts by upvote velocity to detect trending discussions.
    - *Trending Scout* uses Gemini 3.1 Flash Lite with the `googleSearch` grounding tool to surface stories that are gaining traction on the open web.
-   - *NewsData Scanner* queries the NewsData.io REST API with keyword filters and prioritizes articles that include images.
 
 2. **Editor Agent** — receives all candidates, removes duplicates via embedding-based cosine similarity (`text-embedding-004`, threshold 0.85), assigns a confidence level (confirmed / developing / rumor), detects whether a story qualifies as breaking news, and ranks everything by relevance and urgency. Uses `gemini-3.1-pro-preview` for complex editorial reasoning.
 
@@ -197,34 +202,46 @@ Three components keep the station running autonomously:
 - **Auto-Pilot** — a timer-based orchestrator that fires every 60 minutes. It triggers all scouts, runs the editor pipeline, enriches new briefs, invokes the schedule planner, and injects the highest-priority story if the presenter is idle.
 - **Schedule Planner** — an AI agent (`gemini-3.1-pro-preview` with structured JSON output) that generates the next 2–3 hours of programming. It mixes topic blocks, music transitions, guest interviews, and call-in segments, respecting narrative continuity and avoiding topic repetition.
 - **Scheduler** — a tight 15-second execution loop that walks the timeline, starts each block when its time arrives, and advances the playhead. It coordinates with the presenter, music player, and guest/co-host sessions. It also sets a **wrap-up timer** for topic and guest blocks: 30 seconds before the block ends, it sends a private cue to the presenter so Pulse can close the segment naturally. If content finishes early (co-host wraps, guest leaves, turn prompts exhausted), the scheduler calculates remaining time and plays a **random fill music track** from the library until the next block starts.
-- **Music Scheduler** — generates 10 fresh tracks daily at 3 AM using Lyria, cycling through 20 radio styles (ambient, lo-fi, jazz, synthwave, etc.). Runs sequentially with a 5-second cooldown between tracks. Can also be triggered manually via the admin panel.
+- **Music Scheduler** — generates 10 fresh tracks every 72 hours at 3 AM using ElevenLabs Music API, cycling through 20 radio styles (ambient, lo-fi, jazz, synthwave, etc.). Runs sequentially with a 5-second cooldown between tracks. Can also be triggered manually via the admin panel.
 
 A **Daily Memory** module writes a Markdown log of each day's show: topics covered, caller interactions, music played, and key moments. This file is loaded into the presenter's context the next day for editorial continuity.
 
 #### Agent Server — Media
 
 - **Music Player** — streams pre-generated WAV files (24kHz mono) into the audio output, mixed alongside the presenter voice. Used for transitions, intros, scheduled music blocks, and automatic fill music when content ends early.
-- **Music Generator** — connects to Google's **Lyria RealTime API** to generate original instrumental tracks on demand. The raw prompt is first enhanced by an LLM to improve musical quality and avoid copyright patterns, then sent to Lyria. Output is downsampled from 48kHz stereo to 24kHz mono for broadcast compatibility.
-- **Music Scheduler** — batch generator that produces 10 tracks daily at 3 AM across 20 radio styles. Ensures the station always has fresh, varied music without manual intervention.
+- **Music Generator** — connects to the **ElevenLabs Music API** to generate original instrumental tracks on demand. The raw prompt is first enhanced by an LLM to improve musical quality and avoid copyright patterns, then sent to ElevenLabs. Output is converted to 24kHz mono for broadcast compatibility.
+- **Music Scheduler** — batch generator that produces 10 tracks every 72 hours at 3 AM across 20 radio styles. Ensures the station always has fresh, varied music without manual intervention.
 
-#### Google AI APIs
+#### Firecrawl APIs
 
 | API | Role in the system |
 |-----|-------------------|
-| **Gemini Live API** (`gemini-live-2.5-flash-native-audio`) | All real-time audio — presenter, co-host, guest, screener |
+| **Search API** | Firecrawl Scanner (web search with structured results), Research Agent (deep-dive discovery) |
+| **Scrape API** | Article Enricher (full-page markdown extraction), Research Agent (source content fetching) |
+
+#### ElevenLabs APIs (ElevenAgents)
+
+| API | Role in the system |
+|-----|-------------------|
+| **Conversational AI** (WebSocket) | All real-time voice — presenter, co-host, guest, screener, producer |
+| **Music API** | AI music generation (on-demand + batch scheduling) |
+
+#### Google AI APIs (Text LLM)
+
+| API | Role in the system |
+|-----|-------------------|
 | **Gemini 3.1 Pro** (`gemini-3.1-pro-preview`) | Editor Agent (editorial reasoning), Schedule Planner (structured output) |
 | **Gemini 3.1 Flash Lite** (`gemini-3.1-flash-lite-preview`) | Article Enricher, Research Agent, Trending Scout (fast inference) |
 | **Text Embeddings** (`text-embedding-004`) | News deduplication via cosine similarity |
-| **Lyria RealTime** (`lyria-realtime-exp`) | AI music generation |
 | **Google Search** (grounding tool) | Trending Scout + Research Agent web lookups |
 
 #### External Data Sources
 
 | Source | Protocol | Used by |
 |--------|----------|---------|
+| Firecrawl | Search + Scrape API | Firecrawl Scanner, Article Enricher, Research Agent |
 | RSS Feeds (TechCrunch, The Verge, etc.) | HTTP/XML | RSS Scanner |
 | Reddit | Public JSON API | Reddit Scout |
-| NewsData.io | REST API (key required) | NewsData Scanner |
 | Google Search | Gemini grounding tool | Trending Scout, Research Agent |
 
 #### File-Based Persistence
@@ -247,10 +264,10 @@ All runtime state is stored as JSON files under `agent-server/data/` (gitignored
 
 | Agent | Source | Model | Method |
 |-------|--------|-------|--------|
+| **Firecrawl Scanner** | Live web | None | Firecrawl Search API, structured markdown + metadata |
 | **RSS Scanner** | Configurable feeds | None | `rss-parser` library, URL dedup |
 | **Reddit Scout** | Subreddits | None | Public JSON API, upvote scoring |
 | **Trending Scout** | Google Search | `gemini-3.1-flash-lite-preview` | Gemini with `googleSearch` tool |
-| **NewsData Scanner** | NewsData.io | None | REST API, image filtering |
 
 ### Editorial Processing
 
@@ -268,16 +285,16 @@ All runtime state is stored as JSON files under `agent-server/data/` (gitignored
 | **Schedule Planner** | Generate 2–3 hour schedule from briefs + tracks | `gemini-3.1-pro-preview` (structured output) |
 | **Auto-Pilot** | Orchestrate scan → process → enrich → plan → inject cycle | Timer-based coordination |
 
-### Live Audio (Gemini Live Sessions)
+### Live Audio (ElevenLabs Conversational AI Sessions)
 
 | Session | Voice | Role |
 |---------|-------|------|
-| **Presenter (Pulse)** | Orus | Main host — editorial analysis, deep dives, caller interaction |
-| **Co-Host (Nova)** | Leda | Post-topic discussion partner, 3-turn exchanges |
+| **Presenter (Pulse)** | Daniel | Main host — editorial analysis, deep dives, caller interaction |
+| **Co-Host (Nova)** | Lily | Post-topic discussion partner, 3-turn exchanges |
 | **Guest** | Configurable | Expert interviews with distinct personality |
-| **Screener** | Kore | Voicemail attendant when lines are closed |
+| **Screener** | Jessica | Captures caller messages when lines are closed |
 
-All live sessions use the `gemini-live-2.5-flash-native-audio` model with affective dialog enabled.
+All live sessions use ElevenLabs Conversational AI agents, auto-provisioned at startup via the REST API.
 
 ---
 
@@ -293,19 +310,31 @@ All live sessions use the `gemini-live-2.5-flash-native-audio` model with affect
 
 ### Backend (`agent-server/`)
 - **Hono** with `@hono/node-server` and `@hono/node-ws`
-- **@google/genai** SDK for all Gemini interactions
+- **Firecrawl** Search API + Scrape API for real-time web intelligence
+- **ElevenLabs** Conversational AI (WebSocket) + Music API for voice agents and music generation
+- **@google/genai** SDK for Gemini text LLM tasks (editorial reasoning, enrichment, embeddings)
 - **rss-parser** for RSS feed ingestion
 - **TypeScript** throughout
 - **File-based JSON persistence** (schedules, briefs, stations, embeddings)
 
-### Google AI Models Used
+### Firecrawl
+| API | Purpose |
+|-----|---------|
+| Search API | Real-time web search with structured content (Firecrawl Scanner, Research Agent) |
+| Scrape API | Full-page markdown extraction for article enrichment (Article Enricher, Research Agent) |
+
+### ElevenLabs (ElevenAgents)
+| Service | Purpose |
+|---------|---------|
+| Conversational AI (WebSocket) | All real-time voice sessions (presenter, guest, co-host, screener, producer) |
+| Music API | AI music generation (on-demand + 72-hour batch) |
+
+### Google Gemini (Text LLM)
 | Model | Purpose |
 |-------|---------|
-| `gemini-live-2.5-flash-native-audio` | All real-time audio sessions (presenter, guest, co-host, screener) |
 | `gemini-3.1-pro-preview` | Editor Agent, Schedule Planner (complex reasoning) |
 | `gemini-3.1-flash-lite-preview` | Enricher, Research, Trending Scout (fast inference) |
 | `text-embedding-004` | News deduplication via cosine similarity |
-| `lyria-realtime-exp` | AI music generation |
 
 ---
 
@@ -315,8 +344,9 @@ All live sessions use the `gemini-live-2.5-flash-native-audio` model with affect
 
 - Node.js 18+ (22 recommended)
 - npm
+- A Firecrawl API key ([firecrawl.dev](https://firecrawl.dev/))
+- An ElevenLabs API key ([elevenlabs.io](https://elevenlabs.io/))
 - A Google Cloud account with Gemini API enabled
-- A NewsData.io API key ([free tier available](https://newsdata.io/))
 
 ### Installation
 
@@ -338,19 +368,19 @@ npm install
 Create `agent-server/.env`:
 
 ```env
-# Gemini API (required)
+# Firecrawl (required — web search + scraping for news pipeline)
+FIRECRAWL_API_KEY=your_firecrawl_api_key
+
+# ElevenLabs (required — voice agents + music generation)
+ELEVENLABS_API_KEY=your_elevenlabs_api_key
+
+# Gemini API (required — text LLM tasks)
 GOOGLE_API_KEY=your_gemini_api_key
 
 # Vertex AI (alternative to API key)
 # GOOGLE_GENAI_USE_VERTEXAI=true
 # GOOGLE_CLOUD_PROJECT=your_project_id
 # GOOGLE_CLOUD_LOCATION=us-central1
-
-# Music generation — Lyria requires AI Studio key
-GEMINI_API_KEY=your_ai_studio_key
-
-# News API
-NEWSDATA_API_KEY=your_newsdata_key
 
 PORT=3001
 ```
@@ -391,7 +421,7 @@ npm run dev
 5. **Manage schedule** — drag blocks on timeline, add/edit/delete, auto-generate
 6. **News desk** — manually scan, research individual briefs, send to air
 7. **Launch guests** — start expert interview segments with configurable voice
-8. **Music** — generate original tracks via Lyria, preview, schedule or play immediately
+8. **Music** — generate original tracks via ElevenLabs Music API, preview, schedule or play immediately
 
 ### Listener Experience
 
@@ -451,7 +481,7 @@ npm run dev
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/media/tracks` | List available WAV tracks |
-| POST | `/radio/music/generate` | `{ prompt, durationSeconds?, bpm? }` — generate via Lyria |
+| POST | `/radio/music/generate` | `{ prompt, durationSeconds?, bpm? }` — generate via ElevenLabs Music API |
 | GET | `/radio/music/status` | Current generation status |
 | GET | `/radio/music/list` | All generated tracks with metadata |
 | POST | `/radio/music/play` | `{ filename }` — play track on air |
@@ -526,36 +556,40 @@ The UI follows an **"On Air"** design language — dark, warm, immersive:
 
 ## Deployment
 
-Both services are containerized with Docker and deploy to Google Cloud Run.
+Both services are containerized with multi-stage Docker builds. A `docker-compose.yml` at the root makes it easy to run everything with a single command.
 
-### Backend
+### Docker Compose (recommended)
+
+1. Copy `agent-server/.env.example` to `agent-server/.env` and fill in your API keys.
+2. Run:
 
 ```bash
+docker compose up --build
+```
+
+- Frontend: http://localhost:3000
+- Backend: http://localhost:3001
+- Admin panel: http://localhost:3000/admin
+
+Data (schedules, briefs, embeddings) and media (generated WAV tracks) are persisted in named Docker volumes.
+
+### Individual Dockerfiles
+
+Each service can also be built and run independently:
+
+```bash
+# Backend
 cd agent-server
-gcloud run deploy pulse-backend \
-  --source . \
-  --region us-central1 \
-  --allow-unauthenticated \
-  --port 3001 \
-  --session-affinity \
-  --min-instances 1 \
-  --memory 1Gi \
-  --set-env-vars "GOOGLE_API_KEY=...,NEWSDATA_API_KEY=...,GEMINI_API_KEY=..."
-```
+docker build -t pulse-backend .
+docker run -p 3001:3001 --env-file .env pulse-backend
 
-### Frontend
-
-```bash
+# Frontend
 cd web
-gcloud run deploy pulse-web \
-  --source . \
-  --region us-central1 \
-  --allow-unauthenticated \
-  --port 3000 \
-  --set-env-vars "NEXT_PUBLIC_API_URL=https://your-backend-url.run.app"
+docker build -t pulse-web .
+docker run -p 3000:3000 -e NEXT_PUBLIC_API_URL=http://localhost:3001 pulse-web
 ```
 
-The frontend reads `NEXT_PUBLIC_API_URL` at runtime (injected via server-side rendering in `layout.tsx`) and derives WebSocket URLs automatically (`https://` becomes `wss://`).
+The frontend reads `NEXT_PUBLIC_API_URL` at runtime (injected via server-side rendering in `layout.tsx`) and derives WebSocket URLs automatically (`http://` becomes `ws://`, `https://` becomes `wss://`).
 
 ---
 
@@ -567,7 +601,8 @@ pulse-ai/
 │   ├── src/
 │   │   ├── index.ts                 # Entry point, routes, WebSocket, orchestration
 │   │   ├── lib/
-│   │   │   ├── gemini-live.ts       # Gemini Live API wrapper
+│   │   │   ├── elevenlabs-live.ts   # ElevenLabs Conversational AI wrapper
+│   │   │   ├── agent-provision.ts   # Auto-provision ElevenLabs agents at startup
 │   │   │   ├── presenter.ts         # Presenter agent (Pulse)
 │   │   │   ├── cohost.ts            # Co-host agent (Nova)
 │   │   │   ├── guest.ts             # Guest expert sessions
@@ -575,8 +610,8 @@ pulse-ai/
 │   │   │   ├── scheduler.ts         # 15-second execution loop
 │   │   │   ├── auto-pilot.ts        # News pipeline orchestrator
 │   │   │   ├── music-player.ts      # WAV streaming + fill music
-│   │   │   ├── music-generator.ts   # Lyria music generation
-│   │   │   ├── music-scheduler.ts   # Daily batch generation (10 tracks, 20 styles)
+│   │   │   ├── music-generator.ts   # ElevenLabs Music API generation
+│   │   │   ├── music-scheduler.ts   # 72-hour batch generation (10 tracks, 20 styles)
 │   │   │   ├── daily-memory.ts      # Show history (.md logs)
 │   │   │   ├── news-dedup.ts        # Embedding-based deduplication
 │   │   │   ├── news-store.ts        # Brief/candidate persistence
@@ -586,7 +621,7 @@ pulse-ai/
 │   │   │       ├── rss-scanner.ts
 │   │   │       ├── reddit-scout.ts
 │   │   │       ├── trending-scout.ts
-│   │   │       ├── newsdata-scanner.ts
+│   │   │       ├── firecrawl-scanner.ts
 │   │   │       ├── editor-agent.ts
 │   │   │       ├── research-agent.ts
 │   │   │       ├── article-enricher.ts
@@ -631,6 +666,7 @@ pulse-ai/
 │   │       ├── radio.ts
 │   │       └── schedule.ts
 │   └── Dockerfile
+├── docker-compose.yml               # Run both services
 └── README.md
 ```
 
@@ -638,4 +674,4 @@ pulse-ai/
 
 ## License
 
-This project was built for the Google Gemini Live Agent Challenge hackathon.
+This project was built for the [Combine Firecrawl Search with ElevenAgents](https://elevenlabs.io/docs) hackathon.

@@ -18,6 +18,7 @@ import {
   Locate,
   Wand2,
   Loader2,
+  AlertCircle,
 } from "lucide-react";
 import type {
   ScheduleBlock,
@@ -142,6 +143,7 @@ interface ScheduleTimelineProps {
   onAddBlock: () => void;
   refreshKey?: number;
   isPresenting: boolean;
+  lockedOps?: Record<string, boolean>;
 }
 
 export default function ScheduleTimeline({
@@ -149,12 +151,13 @@ export default function ScheduleTimeline({
   onAddBlock,
   refreshKey,
   isPresenting,
+  lockedOps,
 }: ScheduleTimelineProps) {
   const [date, setDate] = useState(todayDate);
   const [schedule, setSchedule] = useState<DaySchedule | null>(null);
   const [loading, setLoading] = useState(false);
   const [pxPerMin, setPxPerMin] = useState(DEFAULT_PX_PER_MIN);
-  const [nowMin, setNowMin] = useState(getCurrentMinutesFrac);
+  const [nowMin, setNowMin] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const didAutoScroll = useRef(false);
   const [autoFollow, setAutoFollow] = useState(true);
@@ -168,6 +171,14 @@ export default function ScheduleTimeline({
   const resizeWidthRef = useRef(0);
   const resizeMeta = useRef({ mouseX: 0, origWidth: 0, blockType: "topic" as BlockType, moved: false });
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function showToast(msg: string) {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 4000);
+  }
 
   const isToday = date === todayDate();
   const totalWidth = TOTAL_MINUTES * pxPerMin;
@@ -195,8 +206,9 @@ export default function ScheduleTimeline({
     };
   }, [date, refreshKey]);
 
-  // Smooth playhead: update every second
+  // Smooth playhead: update every second (set initial value on mount to avoid hydration mismatch)
   useEffect(() => {
+    setNowMin(getCurrentMinutesFrac());
     const i = setInterval(() => setNowMin(getCurrentMinutesFrac()), 1000);
     return () => clearInterval(i);
   }, []);
@@ -270,7 +282,8 @@ export default function ScheduleTimeline({
     try {
       await scheduleService.executeBlock(date, blockId);
     } catch (e) {
-      console.error("[schedule] execute:", e);
+      const msg = e instanceof Error ? e.message : 'Failed to execute block';
+      showToast(msg);
     }
   }
 
@@ -281,7 +294,8 @@ export default function ScheduleTimeline({
         p ? { ...p, blocks: p.blocks.filter((b) => b.id !== blockId) } : p
       );
     } catch (e) {
-      console.error("[schedule] delete:", e);
+      const msg = e instanceof Error ? e.message : 'Failed to delete block';
+      showToast(msg);
     }
   }
 
@@ -327,7 +341,7 @@ export default function ScheduleTimeline({
         scheduleService
           .updateBlock(date, dragBlockId!, { startTime: newTime })
           .then((u) => applyBlockUpdate(u))
-          .catch((err) => console.error("[schedule] drag:", err));
+          .catch((err) => showToast(err instanceof Error ? err.message : 'Failed to move block'));
       }
       setDragBlockId(null);
     }
@@ -376,7 +390,7 @@ export default function ScheduleTimeline({
         scheduleService
           .updateBlock(date, resizeBlockId!, { durationMinutes: newMin })
           .then((u) => applyBlockUpdate(u))
-          .catch((err) => console.error("[schedule] resize:", err));
+          .catch((err) => showToast(err instanceof Error ? err.message : 'Failed to resize block'));
       }
       setResizeBlockId(null);
     }
@@ -420,7 +434,7 @@ export default function ScheduleTimeline({
         setSchedule(s);
       }
     } catch (err) {
-      console.error('[ScheduleTimeline] auto-generate failed:', err);
+      showToast(err instanceof Error ? err.message : 'Auto-generate failed');
     } finally {
       setAutoGenerating(false);
     }
@@ -570,7 +584,8 @@ export default function ScheduleTimeline({
 
           <button
             onClick={onAddBlock}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-on-air/10 text-on-air border border-on-air/20 hover:bg-on-air/20 text-[10px] font-heading font-bold tracking-wide uppercase transition-colors"
+            disabled={!!lockedOps?.['auto-generate']}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-on-air/10 text-on-air border border-on-air/20 hover:bg-on-air/20 disabled:opacity-50 disabled:cursor-not-allowed text-[10px] font-heading font-bold tracking-wide uppercase transition-colors"
           >
             <Plus className="w-3 h-3" />
             Add
@@ -578,16 +593,16 @@ export default function ScheduleTimeline({
 
           <button
             onClick={handleAutoGenerate}
-            disabled={autoGenerating}
+            disabled={autoGenerating || !!lockedOps?.['auto-generate']}
             className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-500/10 text-violet-400 border border-violet-500/20 hover:bg-violet-500/20 disabled:opacity-50 text-[10px] font-heading font-bold tracking-wide uppercase transition-colors"
             title="Auto-generate schedule (scans for news first)"
           >
-            {autoGenerating ? (
+            {(autoGenerating || lockedOps?.['auto-generate']) ? (
               <Loader2 className="w-3 h-3 animate-spin" />
             ) : (
               <Wand2 className="w-3 h-3" />
             )}
-            {autoGenerating ? "Generating..." : "Auto"}
+            {(autoGenerating || lockedOps?.['auto-generate']) ? "Generating..." : "Auto"}
           </button>
         </div>
       </div>
@@ -896,6 +911,17 @@ export default function ScheduleTimeline({
         </div>
       )}
       </div>
+
+      {/* Toast notification */}
+      {toast && (
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-lg bg-red-500/15 border border-red-500/30 px-3 py-2 text-xs text-red-300 shadow-lg backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2 duration-200">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0 text-red-400" />
+          <span>{toast}</span>
+          <button onClick={() => setToast(null)} className="ml-1 p-0.5 rounded hover:bg-white/10 text-red-400">
+            <span className="sr-only">Dismiss</span>&times;
+          </button>
+        </div>
+      )}
     </div>
   );
 }

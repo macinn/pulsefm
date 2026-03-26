@@ -1,4 +1,4 @@
-export type SourceType = 'rss' | 'reddit' | 'gemini-search' | 'newsdata'
+export type SourceType = 'rss' | 'reddit' | 'gemini-search' | 'firecrawl'
 export type ConfidenceLevel = 'confirmed' | 'developing' | 'rumor'
 
 export interface NewsCandidate {
@@ -14,6 +14,8 @@ export interface NewsCandidate {
   imageUrls?: string[]
   keyPoints?: string[]
   discussionTopics?: string[]
+  /** Original article publication timestamp (when available) */
+  publishedAt?: number
 }
 
 export type BriefAction = 'created' | 'sent' | 'researched' | 'enriched' | 'report-ready' | 'updated' | 'concluded'
@@ -57,4 +59,8 @@ export interface EditorialBrief {
   lastUpdatedAt?: number
   sentAt?: number
   sentCount?: number
+  /** How often (ms) this brief should be re-researched while developing. Assigned by EditorAgent. */
+  recheckIntervalMs?: number
+  /** Timestamp of the last research pass */
+  lastResearchedAt?: number
 }

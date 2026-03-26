@@ -1,6 +1,4 @@
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
-import path from 'node:path'
+import type Database from 'better-sqlite3'
 import type { DaySchedule, ScheduleBlock } from '../types/schedule.js'
 
 export interface ScheduleStore {
@@ -10,36 +8,21 @@ export interface ScheduleStore {
   deleteBlock(date: string, blockId: string): Promise<boolean>
 }
 
-export class JsonFileScheduleStore implements ScheduleStore {
-  private dir: string
+export class SqliteScheduleStore implements ScheduleStore {
+  private db: Database.Database
 
-  constructor(dataDir: string) {
-    this.dir = dataDir
-  }
-
-  private filePath(date: string): string {
-    return path.join(this.dir, `${date}.json`)
-  }
-
-  private async ensureDir(): Promise<void> {
-    if (!existsSync(this.dir)) {
-      await mkdir(this.dir, { recursive: true })
-    }
+  constructor(db: Database.Database) {
+    this.db = db
   }
 
   async getSchedule(date: string): Promise<DaySchedule> {
-    const fp = this.filePath(date)
-    if (!existsSync(fp)) {
-      return { date, blocks: [] }
-    }
-    const raw = await readFile(fp, 'utf-8')
-    return JSON.parse(raw) as DaySchedule
+    const row = this.db.prepare('SELECT data FROM schedules WHERE date = ?').get(date) as { data: string } | undefined
+    if (!row) return { date, blocks: [] }
+    return JSON.parse(row.data) as DaySchedule
   }
 
   async saveSchedule(schedule: DaySchedule): Promise<void> {
-    await this.ensureDir()
-    const fp = this.filePath(schedule.date)
-    await writeFile(fp, JSON.stringify(schedule, null, 2), 'utf-8')
+    this.db.prepare('INSERT OR REPLACE INTO schedules (date, data) VALUES (?, ?)').run(schedule.date, JSON.stringify(schedule))
   }
 
   async updateBlock(date: string, blockId: string, partial: Partial<ScheduleBlock>): Promise<ScheduleBlock | null> {

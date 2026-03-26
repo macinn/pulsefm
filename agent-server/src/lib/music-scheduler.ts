@@ -62,21 +62,31 @@ export class MusicScheduler {
     console.log('[music-scheduler] daily generation stopped')
   }
 
+  private static readonly INTERVAL_HOURS = 72
+
   private scheduleDailyRun(): void {
     const now = new Date()
     const next = new Date(now)
     next.setHours(3, 0, 0, 0) // Run at 3 AM
     if (next <= now) next.setDate(next.getDate() + 1)
+
+    // Find the next 3 AM that falls on a 72-hour cycle from epoch
+    const msPerCycle = MusicScheduler.INTERVAL_HOURS * 3600_000
+    const epoch3am = new Date('2026-01-01T03:00:00').getTime()
+    while ((next.getTime() - epoch3am) % msPerCycle !== 0) {
+      next.setDate(next.getDate() + 1)
+    }
+
     const delay = next.getTime() - now.getTime()
 
     this.dailyTimer = setTimeout(() => {
       this.generateBatch().catch((err) =>
-        console.error('[music-scheduler] daily batch failed:', err),
+        console.error('[music-scheduler] batch failed:', err),
       )
       this.scheduleDailyRun()
     }, delay)
 
-    console.log(`[music-scheduler] next run at ${next.toISOString()} (in ${Math.round(delay / 60000)}min)`)
+    console.log(`[music-scheduler] next run at ${next.toISOString()} (in ${Math.round(delay / 3600000)}h)`)
   }
 
   async generateBatch(count?: number): Promise<{ generated: number; errors: number; tracks: string[] }> {

@@ -1,7 +1,5 @@
 import { GoogleGenAI } from '@google/genai'
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
-import path from 'node:path'
+import type Database from 'better-sqlite3'
 import type { NewsCandidate } from '../types/news.js'
 
 const EMBEDDING_MODEL = 'text-embedding-004'
@@ -23,39 +21,39 @@ export interface DedupResult {
 
 export class NewsDedup {
   private ai: GoogleGenAI
-  private dataDir: string
-  private cache: Map<string, StoredEmbedding[]> = new Map()
+  private db: Database.Database
 
-  constructor(apiKey: string, dataDir: string) {
+  constructor(apiKey: string, db: Database.Database) {
     this.ai = new GoogleGenAI({ apiKey })
-    this.dataDir = dataDir
+    this.db = db
   }
 
-  private embeddingsPath(stationId: string): string {
-    return path.join(this.dataDir, stationId, 'embeddings.json')
+  private loadEmbeddings(stationId: string): StoredEmbedding[] {
+    const rows = this.db.prepare('SELECT candidate_id, headline, vector, stored_at FROM embeddings WHERE station_id = ? ORDER BY stored_at ASC')
+      .all(stationId) as { candidate_id: string; headline: string; vector: string; stored_at: number }[]
+    return rows.map((r) => ({
+      candidateId: r.candidate_id,
+      headline: r.headline,
+      vector: JSON.parse(r.vector) as number[],
+      storedAt: r.stored_at,
+    }))
   }
 
-  private async loadEmbeddings(stationId: string): Promise<StoredEmbedding[]> {
-    if (this.cache.has(stationId)) return this.cache.get(stationId)!
-    const fp = this.embeddingsPath(stationId)
-    if (!existsSync(fp)) return []
-    try {
-      const raw = await readFile(fp, 'utf-8')
-      const data = JSON.parse(raw) as StoredEmbedding[]
-      this.cache.set(stationId, data)
-      return data
-    } catch {
-      return []
-    }
-  }
-
-  private async saveEmbeddings(stationId: string, embeddings: StoredEmbedding[]): Promise<void> {
-    const dir = path.join(this.dataDir, stationId)
-    if (!existsSync(dir)) await mkdir(dir, { recursive: true })
-    // Keep max 1000 embeddings, pruning oldest
-    const trimmed = embeddings.slice(-1000)
-    this.cache.set(stationId, trimmed)
-    await writeFile(this.embeddingsPath(stationId), JSON.stringify(trimmed), 'utf-8')
+  private saveEmbeddings(stationId: string, embeddings: StoredEmbedding[]): void {
+    const insert = this.db.prepare('INSERT OR REPLACE INTO embeddings (candidate_id, station_id, headline, vector, stored_at) VALUES (?, ?, ?, ?, ?)')
+    const txn = this.db.transaction(() => {
+      for (const e of embeddings) {
+        insert.run(e.candidateId, stationId, e.headline, JSON.stringify(e.vector), e.storedAt)
+      }
+      // Keep max 1000 per station
+      const count = this.db.prepare('SELECT COUNT(*) as cnt FROM embeddings WHERE station_id = ?').get(stationId) as { cnt: number }
+      if (count.cnt > 1000) {
+        this.db.prepare(`DELETE FROM embeddings WHERE station_id = ? AND candidate_id IN (
+          SELECT candidate_id FROM embeddings WHERE station_id = ? ORDER BY stored_at ASC LIMIT ?
+        )`).run(stationId, stationId, count.cnt - 1000)
+      }
+    })
+    txn()
   }
 
   private async getEmbeddings(texts: string[]): Promise<number[][]> {
@@ -96,30 +94,63 @@ export class NewsDedup {
     return bestSim >= RELATED_THRESHOLD ? { id: bestId, similarity: bestSim } : null
   }
 
+  private normalizeUrl(url: string): string {
+    try {
+      const u = new URL(url)
+      // Strip tracking params, fragments, trailing slashes
+      u.hash = ''
+      const stripParams = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'ref', 'source', 'fbclid', 'gclid']
+      for (const p of stripParams) u.searchParams.delete(p)
+      let path = u.pathname.replace(/\/+$/, '') || '/'
+      const host = u.hostname.replace(/^www\./, '')
+      return `${host}${path}${u.search}`
+    } catch {
+      return url
+    }
+  }
+
   async deduplicate(stationId: string, candidates: NewsCandidate[]): Promise<DedupResult> {
     if (candidates.length === 0) return { unique: [], duplicates: [], related: [] }
 
-    const existing = await this.loadEmbeddings(stationId)
-    const texts = candidates.map((c) => `${c.headline}. ${c.summary}`)
+    // Phase 1: URL-based pre-dedup — same normalized URL = definite duplicate
+    const seenUrls = new Map<string, number>()
+    const urlDeduped: NewsCandidate[] = []
+    const urlDuplicates: { candidate: NewsCandidate; matchedId: string; similarity: number }[] = []
+    for (const c of candidates) {
+      const normUrl = this.normalizeUrl(c.url)
+      const existingIdx = seenUrls.get(normUrl)
+      if (existingIdx !== undefined) {
+        urlDuplicates.push({ candidate: c, matchedId: urlDeduped[existingIdx].id, similarity: 1.0 })
+      } else {
+        seenUrls.set(normUrl, urlDeduped.length)
+        urlDeduped.push(c)
+      }
+    }
+
+    if (urlDeduped.length === 0) return { unique: [], duplicates: urlDuplicates, related: [] }
+
+    // Phase 2: Semantic embedding dedup
+    const existing = this.loadEmbeddings(stationId)
+    const texts = urlDeduped.map((c) => `${c.headline}. ${c.summary}`)
 
     let vectors: number[][]
     try {
       vectors = await this.getEmbeddings(texts)
     } catch (err) {
       console.warn('[news-dedup] embedding failed, passing all candidates through:', err)
-      return { unique: candidates, duplicates: [], related: [] }
+      return { unique: urlDeduped, duplicates: urlDuplicates, related: [] }
     }
 
-    if (vectors.length !== candidates.length) {
-      console.warn(`[news-dedup] vector count mismatch: ${vectors.length} vs ${candidates.length}`)
-      return { unique: candidates, duplicates: [], related: [] }
+    if (vectors.length !== urlDeduped.length) {
+      console.warn(`[news-dedup] vector count mismatch: ${vectors.length} vs ${urlDeduped.length}`)
+      return { unique: urlDeduped, duplicates: urlDuplicates, related: [] }
     }
 
-    const result: DedupResult = { unique: [], duplicates: [], related: [] }
+    const result: DedupResult = { unique: [], duplicates: [...urlDuplicates], related: [] }
     const newEmbeddings: StoredEmbedding[] = []
 
-    for (let i = 0; i < candidates.length; i++) {
-      const candidate = candidates[i]
+    for (let i = 0; i < urlDeduped.length; i++) {
+      const candidate = urlDeduped[i]
       const vector = vectors[i]
       // Check against both existing embeddings and newly added ones in this batch
       const allEmbeddings = [...existing, ...newEmbeddings]
@@ -139,7 +170,7 @@ export class NewsDedup {
     }
 
     if (newEmbeddings.length > 0) {
-      await this.saveEmbeddings(stationId, [...existing, ...newEmbeddings])
+      this.saveEmbeddings(stationId, [...existing, ...newEmbeddings])
     }
 
     console.log(`[news-dedup] ${candidates.length} candidates: ${result.unique.length} unique, ${result.duplicates.length} duplicates, ${result.related.length} related`)

@@ -1,10 +1,11 @@
-import { connectGeminiLive, type GeminiLiveSession, type GeminiVoice } from './gemini-live.js'
+import { connectElevenLabs, type ElevenLabsSession } from './elevenlabs-live.js'
+import { getAgentIds } from './agent-provision.js'
 
 export interface GuestConfig {
   name: string
   expertise: string
   topic: string
-  voice: GeminiVoice
+  voiceId?: string
 }
 
 export interface GuestCallbacks {
@@ -45,8 +46,14 @@ export async function createGuestSession(
 ): Promise<GuestSession> {
   let transcriptBuffer = ''
 
-  const session: GeminiLiveSession = await connectGeminiLive(
-    buildGuestInstruction(config),
+  const session: ElevenLabsSession = await connectElevenLabs(
+    {
+      agentId: getAgentIds().guest,
+      overrides: {
+        prompt: buildGuestInstruction(config),
+        ...(config.voiceId ? { voiceId: config.voiceId } : {}),
+      },
+    },
     {
       onAudio(base64Pcm) {
         callbacks.onAudio(base64Pcm)
@@ -69,16 +76,13 @@ export async function createGuestSession(
       onError: callbacks.onError,
       onClose: callbacks.onClose,
     },
-    config.voice
   )
 
   return {
     config,
     respondTo(hostText: string) {
-      session.sendText(
-        `The host just said: "${hostText}". Respond as a guest expert — share your insights, ` +
-        `answer their question, or add to the discussion. Be concise and engaging.`
-      )
+      session.sendContextualUpdate(`The host just said: "${hostText}"`)
+      session.sendText('Respond to the host.')
     },
     close() {
       session.close()

@@ -42,6 +42,8 @@ export class RssScanner {
       const imageUrl = extractImageUrl(item as unknown as Record<string, unknown>)
       const imageUrls = extractAllImageUrls(item as unknown as Record<string, unknown>)
 
+      const pubDate = item.isoDate ? new Date(item.isoDate).getTime() : undefined
+
       candidates.push({
         id: `rss-${hashCode(url)}`,
         headline: item.title?.trim() ?? 'Untitled',
@@ -49,10 +51,11 @@ export class RssScanner {
         url,
         source: 'rss',
         sourceLabel: source.label || feed.title || source.feedUrl,
-        detectedAt: item.isoDate ? new Date(item.isoDate).getTime() : Date.now(),
+        detectedAt: pubDate ?? Date.now(),
         rawScore: 50,
         ...(imageUrl ? { imageUrl } : {}),
         ...(imageUrls.length > 0 ? { imageUrls } : {}),
+        publishedAt: pubDate,
       })
     }
 

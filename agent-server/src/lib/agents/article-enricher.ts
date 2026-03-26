@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai'
+import Firecrawl from '@mendable/firecrawl-js'
 import type { NewsCandidate, EditorialBrief, EnrichmentReport } from '../../types/news.js'
 import type { ResearchAgent } from './research-agent.js'
 
@@ -72,14 +73,16 @@ interface ReportResult {
 
 export class ArticleEnricher {
   private ai: GoogleGenAI
+  private firecrawl: Firecrawl | null = null
   private researchAgent: ResearchAgent | null = null
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, firecrawlApiKey?: string) {
     const savedLocation = process.env.GOOGLE_CLOUD_LOCATION
     process.env.GOOGLE_CLOUD_LOCATION = 'global'
     this.ai = new GoogleGenAI({ apiKey })
     if (savedLocation !== undefined) process.env.GOOGLE_CLOUD_LOCATION = savedLocation
     else delete process.env.GOOGLE_CLOUD_LOCATION
+    if (firecrawlApiKey) this.firecrawl = new Firecrawl({ apiKey: firecrawlApiKey })
   }
 
   setResearchAgent(agent: ResearchAgent) {
@@ -94,7 +97,7 @@ export class ArticleEnricher {
     console.log(`[enricher] brief "${brief.headline.slice(0, 60)}" — fetching ${allUrls.length} source(s)...`)
 
     // Fetch all source URLs with bounded concurrency
-    const fetched = await fetchAllSources(allUrls)
+    const fetched = await this.fetchAllSources(allUrls)
     const withContent = fetched.filter((f) => f.text && f.charCount >= MIN_USEFUL_TEXT)
 
     console.log(`[enricher] ${withContent.length}/${fetched.length} sources had usable content`)
@@ -186,6 +189,38 @@ export class ArticleEnricher {
       lastUpdatedAt: now,
     }
   }
+
+  private async fetchAllSources(urls: { url: string; label: string }[]): Promise<SourceFetchResult[]> {
+    const results: SourceFetchResult[] = []
+
+    for (let i = 0; i < urls.length; i += MAX_CONCURRENT_FETCHES) {
+      const batch = urls.slice(i, i + MAX_CONCURRENT_FETCHES)
+      const batchResults = await Promise.allSettled(
+        batch.map(async ({ url, label }) => {
+          const text = await this.fetchArticleText(url)
+          return { url, label, text, charCount: text?.length ?? 0 }
+        })
+      )
+      for (const r of batchResults) {
+        if (r.status === 'fulfilled') results.push(r.value)
+        else results.push({ url: '', label: '', text: null, charCount: 0 })
+      }
+    }
+
+    return results
+  }
+
+  private async fetchArticleText(url: string): Promise<string | null> {
+    if (this.firecrawl) {
+      try {
+        const result = await this.firecrawl.scrape(url, { formats: ['markdown'] })
+        if (result.markdown) return result.markdown
+      } catch {
+        // Fall through to manual fetch
+      }
+    }
+    return fetchArticleTextFallback(url)
+  }
 }
 
 function collectUrls(brief: EditorialBrief, candidates: NewsCandidate[]): { url: string; label: string }[] {
@@ -213,27 +248,7 @@ function collectUrls(brief: EditorialBrief, candidates: NewsCandidate[]): { url:
   return urls
 }
 
-async function fetchAllSources(urls: { url: string; label: string }[]): Promise<SourceFetchResult[]> {
-  const results: SourceFetchResult[] = []
-
-  for (let i = 0; i < urls.length; i += MAX_CONCURRENT_FETCHES) {
-    const batch = urls.slice(i, i + MAX_CONCURRENT_FETCHES)
-    const batchResults = await Promise.allSettled(
-      batch.map(async ({ url, label }) => {
-        const text = await fetchArticleText(url)
-        return { url, label, text, charCount: text?.length ?? 0 }
-      })
-    )
-    for (const r of batchResults) {
-      if (r.status === 'fulfilled') results.push(r.value)
-      else results.push({ url: '', label: '', text: null, charCount: 0 })
-    }
-  }
-
-  return results
-}
-
-async function fetchArticleText(url: string): Promise<string | null> {
+async function fetchArticleTextFallback(url: string): Promise<string | null> {
   try {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)

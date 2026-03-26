@@ -7,11 +7,16 @@ Your job is to COMPACT and GROUP all news candidates into editorial briefs. You 
 
 ## Core Rules
 
-1. INCLUDE EVERYTHING THAT IS REAL NEWS about AI, startups, or technology — every candidate from RSS feeds (rss), news APIs (newsdata), and search results (gemini-search) MUST be represented in at least one brief. You can compact multiple stories into a grouped brief (e.g. "Tech Industry Roundup") but never silently drop them.
+1. INCLUDE EVERYTHING THAT IS REAL NEWS about AI, startups, or technology — every candidate from RSS feeds (rss), web search (firecrawl), and search results (gemini-search) MUST be represented in at least one brief. You can compact multiple stories into a grouped brief (e.g. "Tech Industry Roundup") but never silently drop them.
 2. TOPIC FILTER — This radio station covers AI, startups, and technology ONLY. If a candidate is clearly off-topic (politics unrelated to tech, sports, celebrity gossip, etc.), you MAY exclude it. When in doubt, include it.
 3. GROUP BY STORY — if multiple candidates describe the SAME event/announcement from different sources, merge them into ONE brief with ALL their candidate IDs in "relatedCandidateIds". The more sources, the better.
 4. Reddit (reddit) is the ONLY source you may freely exclude from — filter out Reddit posts that are just discussions, opinion threads, memes, or self-promotion. Keep Reddit posts only if they report actual news or link to real news articles.
-5. Confidence: "confirmed" = 2+ independent sources agree. "developing" = single quality source. "rumor" = unverified social post only.
+5. Confidence — this is about whether the story will have IMMINENT updates (next 24-48h):
+   - "confirmed" = The story is COMPLETE or STABLE. Use when: (a) 2+ sources agree, OR (b) a single authoritative source reports a finished event (product launched, funding closed, acquisition completed, research published, earnings reported), OR (c) the story describes a situation that won't meaningfully change in the next 48 hours — even if it's technically "ongoing" (e.g. "Company in acquisition talks" → talks could last months, no imminent update expected → confirmed). The test: "Will there be a concrete, newsworthy update within 48 hours?" If unlikely → confirmed.
+   - "developing" = Key facts will likely change or be revealed WITHIN 24-48 HOURS. Use ONLY for: events actively unfolding right now (ongoing outage, live event, vote happening today, launch expected this week, regulatory decision imminent, breaking incident with details still emerging). The story must have a SHORT-TERM resolution timeline. If the outcome could take weeks or months → it's NOT developing, it's confirmed.
+   - "rumor" = Unverified claim from a single low-authority source (anonymous tweet, Reddit speculation, unnamed sources). No credible outlet has reported it.
+   
+   IMPORTANT: Most news is "confirmed". The "developing" tag is RARE — reserved for stories where you genuinely expect a meaningful update within 1-2 days. Examples: "Company X raises $50M" → confirmed. "Major AWS outage ongoing" → developing. "Company reportedly in acquisition talks" → confirmed (talks take months). "SpaceX launch scheduled for tomorrow" → developing. "New AI model released" → confirmed.
 6. Priority: 0-100. Relevance to AI/startups + urgency + novelty + source count. Stories with multiple sources get a priority boost.
 7. isBreaking: true ONLY for stories that just happened with major impact.
 8. Summary: Write a substantive, radio-ready summary the host can use as a full segment. Include the key facts, context, and implications. If Key Points and Discussion Angles are available for a candidate, weave them naturally into the summary. The host should be able to talk 30-60 seconds just from this summary. Conversational and engaging. Naturally mention which sources reported it.
@@ -29,6 +34,7 @@ Return a JSON array. Each brief:
 - "isBreaking": boolean
 - "relatedCandidateIds": string[] (ALL candidate IDs that cover this story — this is critical for source tracking)
 - "needsResearch": boolean (true if the story sounds interesting/important but the available information is thin, vague, or lacks concrete details — our research team will dig deeper on these)
+- "recheckIntervalMinutes": number (how often this story should be re-checked for updates. Only meaningful for "developing" stories. Use 60 for fast-moving/breaking situations, 180 for standard developing stories, 720 for slow-burn developments. For "confirmed" stories use 1440. For "rumor" use 120.)
 
 Return ONLY valid JSON, no markdown fences, no extra text. Up to 15 briefs, ordered by priority descending. NEVER repeat the same story twice.`
 
@@ -40,6 +46,7 @@ interface BriefJson {
   isBreaking: boolean
   relatedCandidateIds: string[]
   needsResearch?: boolean
+  recheckIntervalMinutes?: number
 }
 
 export class EditorAgent {
@@ -95,12 +102,23 @@ export class EditorAgent {
       imageUrl: pickBestImage(candidates, item.relatedCandidateIds ?? []),
       imageUrls: collectAllImages(candidates, item.relatedCandidateIds ?? []),
       needsResearch: item.needsResearch === true,
+      recheckIntervalMs: clampRecheckInterval(item.recheckIntervalMinutes),
       activityLog: [{ timestamp: now, action: 'created' as const, detail: `Generated from ${item.relatedCandidateIds?.length ?? 0} candidates` }],
     }))
 
     // Post-processing: merge briefs that share candidate IDs (LLM sometimes still duplicates)
     return deduplicateBriefs(briefs)
   }
+}
+
+const MIN_RECHECK_MS = 60 * 60_000     // 1 hour minimum
+const MAX_RECHECK_MS = 24 * 60 * 60_000 // 24 hours maximum
+const DEFAULT_RECHECK_MS = 3 * 60 * 60_000 // 3 hours default
+
+function clampRecheckInterval(minutes?: number): number {
+  if (typeof minutes !== 'number' || minutes <= 0) return DEFAULT_RECHECK_MS
+  const ms = minutes * 60_000
+  return Math.max(MIN_RECHECK_MS, Math.min(MAX_RECHECK_MS, ms))
 }
 
 function deduplicateBriefs(briefs: EditorialBrief[]): EditorialBrief[] {

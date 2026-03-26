@@ -231,5 +231,82 @@
     "durationSeconds": 60,
     "createdAt": 1773627354500,
     "enhancedPrompt": "A high-energy, modern electronic news broadcast introduction. Featuring crisp, rhythmic synthetic pulses, driving glitch-influenced percussion, and soaring, cinematic synth stabs. The atmosphere is urgent, professional, and authoritative, with a clean digital texture and a forward-moving, polished production style that conveys breaking news and global connectivity."
+  },
+  {
+    "filename": "ai-ai-startups-1774511957004.wav",
+    "prompt": "ai startups",
+    "durationSeconds": 60,
+    "createdAt": 1774511957004,
+    "enhancedPrompt": "Futuristic electronic soundscape characterized by sleek, high-tempo glitch-hop rhythms and crystalline synthesizer textures. The atmosphere is professional, ambitious, and fast-paced, evoking a sense of cutting-edge innovation and technological progress. Incorporate pulsating bass lines, rapid-fire arpeggios, and subtle digital artifacts to create a crisp, clean, and modern sonic aesthetic suitable for tech-forward environments. The mood is sophisticated, driven, and forward-looking, blending clean pop production with experimental ambient undertones."
+  },
+  {
+    "filename": "ai-funky-electro-pop-with-slap-bass-wah-gu-1774512015892.wav",
+    "prompt": "Funky electro-pop with slap bass, wah guitar, crisp snares, and groovy synth stabs. Energetic and danceable.",
+    "durationSeconds": 60,
+    "createdAt": 1774512015892,
+    "enhancedPrompt": "High-energy funky electro-pop track featuring a prominent, tight slap bassline and rhythmic wah-wah guitar licks. The percussion is anchored by crisp, punchy snare hits and a driving, danceable beat. Layered with bright, percussive synth stabs that provide a staccato, groovy texture. The overall atmosphere is infectious and upbeat, blending classic 1970s funk sensibilities with sleek, modern electronic production. Polished, vibrant, and designed for a dance floor with a constant, infectious rhythmic pulse."
+  },
+  {
+    "filename": "ai-bossa-nova-with-nylon-guitar-soft-brush-1774512039413.wav",
+    "prompt": "Bossa nova with nylon guitar, soft brush drums, gentle bass, and a relaxed swaying rhythm. Elegant and warm.",
+    "durationSeconds": 60,
+    "createdAt": 1774512039413,
+    "enhancedPrompt": "An elegant and warm Bossa Nova composition featuring the intimate, intricate fingerpicking of a nylon-string acoustic guitar. The rhythm is defined by a sophisticated, relaxed swaying pulse, supported by light, crisp brush-played drums and a smooth, gentle upright bass line. The atmosphere is sun-drenched and sophisticated, evoking a breezy seaside afternoon with a soft, organic texture and a mellow, romantic mood. The sonic quality is clean and airy, emphasizing fluid melodic lines and a calm, syncopated groove typical of classic mid-century lounge jazz."
+  },
+  {
+    "filename": "ai-jazzy-neo-soul-with-smooth-saxophone-wa-1774512062413.wav",
+    "prompt": "Jazzy neo-soul with smooth saxophone, warm organ chords, fingerstyle bass, and brushed drums. Sophisticated and smooth.",
+    "durationSeconds": 60,
+    "createdAt": 1774512062413,
+    "enhancedPrompt": "A sophisticated neo-soul composition defined by a laid-back, late-night lounge atmosphere. The track features a velvet-toned saxophone carrying smooth, lyrical melodic lines over a foundation of warm, resonant organ chords. The rhythm section is marked by a deep, fluid fingerstyle bassline that locks into a mellow groove, accompanied by the gentle, intricate textures of brushed acoustic drums. The overall soundscape is intimate, polished, and soulful, evoking a classic urban jazz club aesthetic with a contemporary, relaxed feel."
+  },
+  {
+    "filename": "ai-hip-hop-boom-bap-with-heavy-bass-crisp-1774512087657.wav",
+    "prompt": "Hip hop boom bap with heavy bass, crisp snares, scratchy vinyl samples, and a confident swagger. Old school energy.",
+    "durationSeconds": 60,
+    "createdAt": 1774512087657,
+    "enhancedPrompt": "An authentic 90s East Coast boom bap hip hop track characterized by a gritty, dust-covered aesthetic. The rhythm section features hard-hitting, crisp snares that crack with precision and a deep, thick, distorted bassline providing a heavy foundation. The soundscape is textured with lo-fi, scratchy vinyl samples and processed jazz-infused piano loops. The vibe is defined by a confident, rhythmic swagger and a head-nodding groove, capturing the raw, nostalgic energy of golden age urban hip hop production."
+  },
+  {
+    "filename": "ai-ambient-electronic-with-evolving-pads-s-1774512110014.wav",
+    "prompt": "Ambient electronic with evolving pads, subtle glitch textures, ethereal vocals, and gentle beats. Atmospheric and contemplative.",
+    "durationSeconds": 60,
+    "createdAt": 1774512110014,
+    "enhancedPrompt": "A sophisticated ambient electronic soundscape defined by lush, slowly evolving synthesiser pads that create a vast, immersive atmosphere. The texture is intricate, layered with subtle, microscopic glitch-based percussive artifacts that flicker at the edges of the stereo field. Airy, ethereal vocal textures drift through the mix, processed with deep reverb to sound like distant, haunting echoes. The rhythm is anchored by gentle, understated downtempo beats featuring soft, muted kick drums and organic, crisp clicks. The overall mood is contemplative, spacious, and meditative, evoking a serene, futuristic, and introspective sonic environment."
+  },
+  {
+    "filename": "ai-upbeat-synthwave-with-retro-80s-arpeggio-1774512131781.wav",
+    "prompt": "Upbeat synthwave with retro 80s arpeggios, punchy bass, shimmering pads, and driving electronic drums. High energy futuristic vibes.",
+    "durationSeconds": 60,
+    "createdAt": 1774512131781,
+    "enhancedPrompt": "An upbeat and high-energy synthwave track capturing the essence of the 1980s neon-lit aesthetic. The composition features rapid-fire, crystalline arpeggios that dance over a thick, punchy analog-style bassline. Lush, shimmering synth pads provide a wide, atmospheric soundscape, while crisp and driving electronic drum machine patterns create an infectious, danceable momentum. The overall sonic texture is polished and vibrant, evoking a futuristic, nocturnal city vibe with a fast-paced, optimistic tempo and a nostalgic yet modern electronic production style."
+  },
+  {
+    "filename": "ai-chiptune-with-classic-8-bit-arpeggios-s-1774512155013.wav",
+    "prompt": "Chiptune with classic 8-bit arpeggios, square wave melodies, energetic tempo, and retro game vibes. Nostalgic and playful.",
+    "durationSeconds": 60,
+    "createdAt": 1774512155013,
+    "enhancedPrompt": "Upbeat chiptune track channeling 1980s 8-bit home console aesthetics. Features driving square wave lead melodies, flickering sawtooth arpeggios, and rhythmic noise-based percussion mimicking retro drum synthesis. The composition maintains a high-energy, fast-paced tempo with a playful, arcade-inspired atmosphere. The sonic texture is crunchy and bright, characterized by monophonic limitations, rapid pitch modulation, and a nostalgic, pixelated soundscape that evokes classic side-scrolling platformer games."
+  },
+  {
+    "filename": "ai-chill-lo-fi-hip-hop-with-warm-vinyl-crac-1774512178634.wav",
+    "prompt": "Chill lo-fi hip hop with warm vinyl crackle, soft piano chords, jazzy Rhodes, and relaxed boom-bap drums. Perfect background music for a tech podcast.",
+    "durationSeconds": 60,
+    "createdAt": 1774512178634,
+    "enhancedPrompt": "A chilled-out lo-fi hip hop track characterized by a nostalgic, warm atmosphere featuring authentic vinyl surface noise and dust crackles. The instrumentation centers on gentle, melancholic piano chords layered with smooth, jazzy electric piano textures that evoke a mellow late-night lounge vibe. The rhythm is anchored by a relaxed, dusty boom-bap drum beat with a slightly swung feel and subdued, punchy kick and snare hits. The overall sonic texture is hazy and intimate, providing a steady, unobtrusive flow perfect for intellectual discourse or background concentration, maintaining a consistent mid-tempo pace with a clean yet lo-fi aesthetic."
+  },
+  {
+    "filename": "ai-deep-house-with-a-groovy-four-on-the-flo-1774512201173.wav",
+    "prompt": "Deep house with a groovy four-on-the-floor kick, warm bass, chopped vocal samples, and subtle hi-hat patterns. Smooth and hypnotic.",
+    "durationSeconds": 60,
+    "createdAt": 1774512201173,
+    "enhancedPrompt": "Deep house track defined by a hypnotic and steady four-on-the-floor kick drum rhythm layered with intricate, shimmering hi-hat patterns. The soundscape features a rich, deep, and resonant bassline that pulses with warmth. Texture is enhanced by ethereal, pitch-shifted, and chopped vocal samples that weave through the mix, creating a smooth and immersive atmosphere. The overall mood is sophisticated, late-night, and groovy, with a polished digital production style that emphasizes rhythmic precision and fluid, soulful transitions."
+  },
+  {
+    "filename": "ai-retro-disco-funk-with-wah-wah-guitar-pu-1774512224811.wav",
+    "prompt": "Retro disco funk with wah-wah guitar, punchy horns, driving bass, and four-on-the-floor groove. Feel-good party energy.",
+    "durationSeconds": 60,
+    "createdAt": 1774512224811,
+    "enhancedPrompt": "An upbeat 1970s-inspired disco funk track defined by a relentless four-on-the-floor dance groove and a high-energy, infectious party atmosphere. The instrumentation features a prominent, rhythmic wah-wah guitar providing percussive textures, a tight and punchy brass section delivering sharp staccato stabs, and a deep, driving bassline that anchors the track with a funky syncopated flow. The sonic landscape is lush and vibrant, characterized by clean production, shimmering string arrangements, and a bright, celebratory mood designed for a crowded dance floor."
   }
 ]

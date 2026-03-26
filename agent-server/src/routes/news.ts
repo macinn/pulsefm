@@ -1,27 +1,27 @@
 import { Hono } from 'hono'
 import type { NewsStore } from '../lib/news-store.js'
 import type { StationStore } from '../lib/station-store.js'
-import type { RssSourceConfig, RedditSourceConfig, GeminiSearchConfig, NewsDataConfig } from '../types/station.js'
+import type { RssSourceConfig, RedditSourceConfig, FirecrawlConfig } from '../types/station.js'
 import type { RssScanner } from '../lib/agents/rss-scanner.js'
 import type { RedditScout } from '../lib/agents/reddit-scout.js'
-import type { TrendingScout } from '../lib/agents/trending-scout.js'
-import type { NewsDataScanner } from '../lib/agents/newsdata-scanner.js'
+import type { FirecrawlScanner } from '../lib/agents/firecrawl-scanner.js'
 import type { EditorAgent } from '../lib/agents/editor-agent.js'
 import type { ResearchAgent } from '../lib/agents/research-agent.js'
 import type { ArticleEnricher } from '../lib/agents/article-enricher.js'
 import type { NewsDedup } from '../lib/news-dedup.js'
+import type { OpLocks } from '../lib/op-locks.js'
 
 export interface NewsRouteDeps {
   newsStore: NewsStore
   stationStore: StationStore
   rssScanner: RssScanner
   redditScout: RedditScout
-  trendingScout: TrendingScout
-  newsDataScanner: NewsDataScanner
+  firecrawlScanner: FirecrawlScanner
   editorAgent: EditorAgent
   researchAgent: ResearchAgent
   articleEnricher: ArticleEnricher
   newsDedup?: NewsDedup
+  opLocks?: OpLocks
 }
 
 export function createNewsRoutes(deps: NewsRouteDeps) {
@@ -46,6 +46,10 @@ export function createNewsRoutes(deps: NewsRouteDeps) {
 
   // Trigger a scan for a station (run all enabled scouts)
   api.post('/:stationId/scan', async (c) => {
+    if (deps.opLocks && !deps.opLocks.acquire('scan')) {
+      return c.json({ error: 'A scan is already in progress' }, 409)
+    }
+    try {
     const stationId = c.req.param('stationId')
     const station = await deps.stationStore.getStation(stationId)
     if (!station) return c.json({ error: 'Station not found' }, 404)
@@ -53,14 +57,13 @@ export function createNewsRoutes(deps: NewsRouteDeps) {
     const enabledSources = station.sources.filter((s) => s.enabled)
     const rssSources = enabledSources.filter((s) => s.type === 'rss').map((s) => s.config as RssSourceConfig)
     const redditSources = enabledSources.filter((s) => s.type === 'reddit').map((s) => s.config as RedditSourceConfig)
-    const geminiSources = enabledSources.filter((s) => s.type === 'gemini-search').map((s) => s.config as GeminiSearchConfig)
-    const newsDataSources = enabledSources.filter((s) => s.type === 'newsdata').map((s) => s.config as NewsDataConfig)
+    const firecrawlSources = enabledSources.filter((s) => s.type === 'firecrawl').map((s) => s.config as FirecrawlConfig)
 
+    // Scan using RSS, Reddit, and Firecrawl news (Gemini grounding reserved for research)
     const results = await Promise.allSettled([
       rssSources.length > 0 ? deps.rssScanner.scan(rssSources) : Promise.resolve([]),
       redditSources.length > 0 ? deps.redditScout.scan(redditSources) : Promise.resolve([]),
-      ...geminiSources.map((cfg) => deps.trendingScout.scan(cfg)),
-      newsDataSources.length > 0 ? deps.newsDataScanner.scan(newsDataSources) : Promise.resolve([]),
+      firecrawlSources.length > 0 ? deps.firecrawlScanner.scan(firecrawlSources) : Promise.resolve([]),
     ])
 
     const allCandidates = results
@@ -90,20 +93,32 @@ export function createNewsRoutes(deps: NewsRouteDeps) {
       dedup: dedupStats,
       errors: errors.length > 0 ? errors : undefined,
     })
+    } finally {
+      deps.opLocks?.release('scan')
+    }
   })
 
   // Process candidates through editor agent
   api.post('/:stationId/process', async (c) => {
+    if (deps.opLocks && !deps.opLocks.acquire('process')) {
+      return c.json({ error: 'Processing is already in progress' }, 409)
+    }
+    try {
     const stationId = c.req.param('stationId')
     const station = await deps.stationStore.getStation(stationId)
     if (!station) return c.json({ error: 'Station not found' }, 404)
 
     // Get recent unprocessed candidates (last hour by default)
     const since = Number(c.req.query('since')) || (Date.now() - 3_600_000)
-    const candidates = await deps.newsStore.getCandidates(stationId, { since })
+    const allCandidates = await deps.newsStore.getCandidates(stationId, { since })
+
+    // Filter out candidates already covered by existing briefs
+    const existingBriefs = await deps.newsStore.getBriefs(stationId)
+    const coveredCandidateIds = new Set(existingBriefs.flatMap((b) => b.relatedCandidateIds))
+    const candidates = allCandidates.filter((c) => !coveredCandidateIds.has(c.id))
 
     if (candidates.length === 0) {
-      return c.json({ briefs: 0, message: 'No candidates to process' })
+      return c.json({ briefs: 0, message: 'No new candidates to process' })
     }
 
     // Phase 1: classify immediately so briefs appear in UI fast
@@ -152,6 +167,9 @@ export function createNewsRoutes(deps: NewsRouteDeps) {
     })()
 
     return c.json({ briefs: briefCount, enriching: true })
+    } finally {
+      deps.opLocks?.release('process')
+    }
   })
 
   // Send brief to air — marks as sent + adds log entry

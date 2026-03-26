@@ -78,6 +78,7 @@ export default function AdminPage() {
   const [pendingBriefId, setPendingBriefId] = useState<string | null>(null);
   const [scheduleRefreshKey, setScheduleRefreshKey] = useState(0);
   const [batchGenerating, setBatchGenerating] = useState(false);
+  const [opLocks, setOpLocks] = useState<Record<string, boolean>>({});
   const transcriptRef = useRef<HTMLDivElement>(null);
 
   const { entries, streaming, connected } = useTranscriptStream(
@@ -108,11 +109,25 @@ export default function AdminPage() {
     } catch { /* ignore */ }
   }, []);
 
+  const fetchLocks = useCallback(async () => {
+    try {
+      const res = await fetch(`${getApiUrl()}/radio/locks`);
+      const data = await res.json();
+      setOpLocks(data);
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
     fetchStatus();
     const interval = setInterval(fetchStatus, 3000);
     return () => clearInterval(interval);
   }, [fetchStatus]);
+
+  useEffect(() => {
+    fetchLocks();
+    const interval = setInterval(fetchLocks, 2000);
+    return () => clearInterval(interval);
+  }, [fetchLocks]);
 
   useEffect(() => { fetchMusicLibrary(); }, [fetchMusicLibrary]);
 
@@ -441,7 +456,7 @@ export default function AdminPage() {
                       ? "e.g. OpenAI just released GPT-5 with real-time reasoning"
                       : injectType === "co-anchor"
                         ? "e.g. Nos acaba de llegar una noticia importante sobre Gemini"
-                        : "e.g. Send a shoutout to the hackathon jury"
+                        : "e.g. Send a shoutout to our listeners"
                   }
                   disabled={!canInject}
                   rows={8}
@@ -552,7 +567,7 @@ export default function AdminPage() {
                     <div className="mt-2 h-1 bg-surface rounded-full overflow-hidden">
                       <div className="h-full bg-amber-400/50 rounded-full animate-pulse" style={{ width: "60%" }} />
                     </div>
-                    <p className="text-[10px] text-text-dim mt-1.5">Generating with Lyria AI — this may take ~30 seconds</p>
+                    <p className="text-[10px] text-text-dim mt-1.5">Generating with ElevenLabs Music API — this may take ~30 seconds</p>
                   </div>
                 </div>
               ) : musicGenStatus.status === "error" ? (
@@ -630,6 +645,7 @@ export default function AdminPage() {
             <NewsPanel
               isPresenting={isPresenting}
               canInject={canInject}
+              lockedOps={opLocks}
               onInjectNews={async (type, text, imageUrl, imageUrls, turnPrompts) => {
                 try {
                   await fetch(`${getApiUrl()}/radio/inject`, {
@@ -722,14 +738,14 @@ export default function AdminPage() {
               </h2>
               <button
                 onClick={handleBatchGenerate}
-                disabled={batchGenerating}
+                disabled={batchGenerating || !!opLocks['music-batch']}
                 title="Generate 10 tracks"
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-heading font-bold tracking-wider uppercase
                   bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20
                   disabled:opacity-50 disabled:cursor-not-allowed transition-all"
               >
-                {batchGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Music className="w-3 h-3" />}
-                {batchGenerating ? "Generating..." : "Batch"}
+                {(batchGenerating || opLocks['music-batch']) ? <Loader2 className="w-3 h-3 animate-spin" /> : <Music className="w-3 h-3" />}
+                {(batchGenerating || opLocks['music-batch']) ? "Generating..." : "Batch"}
               </button>
             </div>
 
@@ -848,6 +864,7 @@ export default function AdminPage() {
           onAddBlock={() => setEditorBlock(null)}
           refreshKey={scheduleRefreshKey}
           isPresenting={isPresenting}
+          lockedOps={opLocks}
         />
       </div>
 

@@ -34,7 +34,7 @@ import { getApiUrl } from "@/lib/config";
 const STATION_ID = "pulse-ai";
 
 type ConfidenceLevel = "confirmed" | "developing" | "rumor";
-type SourceType = "rss" | "reddit" | "gemini-search" | "newsdata";
+type SourceType = "rss" | "reddit" | "gemini-search" | "firecrawl";
 type BriefAction = "created" | "sent" | "researched" | "enriched" | "report-ready" | "updated" | "concluded";
 
 interface BriefSource {
@@ -115,7 +115,7 @@ const SOURCE_ICON: Record<SourceType, typeof Rss> = {
   rss: Rss,
   reddit: Globe,
   "gemini-search": Search,
-  newsdata: Database,
+  firecrawl: Flame,
 };
 
 type InjectType = 'breaking' | 'co-anchor' | 'soft';
@@ -125,9 +125,10 @@ interface NewsPanelProps {
   onCreateBlock?: (brief: { briefId: string; headline: string; summary: string; imageUrls?: string[]; turnPrompts?: string[] }) => void;
   isPresenting: boolean;
   canInject?: boolean;
+  lockedOps?: Record<string, boolean>;
 }
 
-export default function NewsPanel({ onInjectNews, onCreateBlock, isPresenting, canInject }: NewsPanelProps) {
+export default function NewsPanel({ onInjectNews, onCreateBlock, isPresenting, canInject, lockedOps }: NewsPanelProps) {
   const [briefs, setBriefs] = useState<EditorialBrief[]>([]);
   const [scanning, setScanning] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -258,17 +259,17 @@ export default function NewsPanel({ onInjectNews, onCreateBlock, isPresenting, c
       <div className="flex items-center gap-2 mb-3">
         <button
           onClick={handleScanAndProcess}
-          disabled={scanning || processing}
+          disabled={scanning || processing || !!lockedOps?.scan || !!lockedOps?.process}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl 
             bg-violet-500/15 text-violet-400 border border-violet-500/20 hover:bg-violet-500/25
             disabled:opacity-40 disabled:cursor-not-allowed transition-all text-[10px] font-heading font-bold tracking-wide uppercase"
         >
-          {scanning || processing ? (
+          {scanning || processing || lockedOps?.scan || lockedOps?.process ? (
             <Loader2 className="w-3 h-3 animate-spin" />
           ) : (
             <Search className="w-3 h-3" />
           )}
-          {scanning ? "Scanning..." : processing ? "Processing..." : "Scan News"}
+          {scanning || lockedOps?.scan ? "Scanning..." : processing || lockedOps?.process ? "Processing..." : "Scan News"}
         </button>
 
         <div className="flex-1" />

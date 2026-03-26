@@ -1,7 +1,19 @@
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
-import path from 'node:path'
+import type Database from 'better-sqlite3'
 import type { NewsCandidate, EditorialBrief, ActivityLogEntry } from '../types/news.js'
+
+function normalizeHeadline(h: string): string {
+  return h.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim()
+}
+
+function headlineSimilarity(a: string, b: string): number {
+  if (a === b) return 1
+  const wordsA = new Set(a.split(' ').filter((w) => w.length > 2))
+  const wordsB = new Set(b.split(' ').filter((w) => w.length > 2))
+  if (wordsA.size === 0 && wordsB.size === 0) return 1
+  const intersection = [...wordsA].filter((w) => wordsB.has(w)).length
+  const union = new Set([...wordsA, ...wordsB]).size
+  return union === 0 ? 0 : intersection / union
+}
 
 export interface NewsStore {
   addCandidates(stationId: string, candidates: NewsCandidate[]): Promise<void>
@@ -14,175 +26,146 @@ export interface NewsStore {
   updateBrief(stationId: string, brief: EditorialBrief): Promise<void>
 }
 
-export class JsonFileNewsStore implements NewsStore {
-  private baseDir: string
-  private locks = new Map<string, Promise<void>>()
+export class SqliteNewsStore implements NewsStore {
+  private db: Database.Database
 
-  constructor(dataDir: string) {
-    this.baseDir = dataDir
-  }
-
-  // Simple file-level mutex to prevent concurrent read-modify-write corruption
-  private async withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    while (this.locks.has(key)) {
-      await this.locks.get(key)
-    }
-    let resolve: () => void
-    const promise = new Promise<void>((r) => { resolve = r })
-    this.locks.set(key, promise)
-    try {
-      return await fn()
-    } finally {
-      this.locks.delete(key)
-      resolve!()
-    }
-  }
-
-  private stationDir(stationId: string): string {
-    return path.join(this.baseDir, stationId)
-  }
-
-  private candidatesPath(stationId: string): string {
-    return path.join(this.stationDir(stationId), 'candidates.json')
-  }
-
-  private briefsPath(stationId: string): string {
-    return path.join(this.stationDir(stationId), 'briefs.json')
-  }
-
-  private async ensureDir(stationId: string): Promise<void> {
-    const dir = this.stationDir(stationId)
-    if (!existsSync(dir)) {
-      await mkdir(dir, { recursive: true })
-    }
-  }
-
-  private async readJson<T>(fp: string): Promise<T[]> {
-    if (!existsSync(fp)) return []
-    const raw = await readFile(fp, 'utf-8')
-    try {
-      return JSON.parse(raw) as T[]
-    } catch {
-      console.warn(`[news-store] corrupted JSON in ${fp}, resetting`)
-      return []
-    }
-  }
-
-  private async writeJson<T>(fp: string, data: T[], stationId: string): Promise<void> {
-    await this.ensureDir(stationId)
-    await writeFile(fp, JSON.stringify(data, null, 2), 'utf-8')
+  constructor(db: Database.Database) {
+    this.db = db
   }
 
   async addCandidates(stationId: string, candidates: NewsCandidate[]): Promise<void> {
-    const fp = this.candidatesPath(stationId)
-    await this.withLock(fp, async () => {
-      const existing = await this.readJson<NewsCandidate>(fp)
-      const existingIds = new Set(existing.map((c) => c.id))
-      const maxAge = Date.now() - 3 * 24 * 60 * 60 * 1000 // 3 days
-      const newOnes = candidates.filter((c) => !existingIds.has(c.id) && c.detectedAt >= maxAge)
-      if (newOnes.length === 0) return
-      const merged = [...existing, ...newOnes]
-      // Keep last 500 candidates max
-      const trimmed = merged.slice(-500)
-      await this.writeJson(fp, trimmed, stationId)
+    const maxAge = Date.now() - 3 * 24 * 60 * 60 * 1000
+    const insert = this.db.prepare('INSERT OR IGNORE INTO candidates (id, station_id, data, detected_at) VALUES (?, ?, ?, ?)')
+    const count = this.db.prepare('SELECT COUNT(*) as cnt FROM candidates WHERE station_id = ?')
+
+    const txn = this.db.transaction(() => {
+      for (const c of candidates) {
+        const articleDate = c.publishedAt ?? c.detectedAt
+        if (articleDate < maxAge) continue
+        insert.run(c.id, stationId, JSON.stringify(c), c.detectedAt)
+      }
+      // Trim to 500 per station
+      const { cnt } = count.get(stationId) as { cnt: number }
+      if (cnt > 500) {
+        this.db.prepare(`DELETE FROM candidates WHERE station_id = ? AND id IN (
+          SELECT id FROM candidates WHERE station_id = ? ORDER BY detected_at ASC LIMIT ?
+        )`).run(stationId, stationId, cnt - 500)
+      }
     })
+    txn()
   }
 
   async getCandidates(stationId: string, opts?: { since?: number; limit?: number }): Promise<NewsCandidate[]> {
-    const all = await this.readJson<NewsCandidate>(this.candidatesPath(stationId))
-    let result = all
+    let sql = 'SELECT data FROM candidates WHERE station_id = ?'
+    const params: (string | number)[] = [stationId]
     if (opts?.since) {
-      result = result.filter((c) => c.detectedAt >= opts.since!)
+      sql += ' AND detected_at >= ?'
+      params.push(opts.since)
     }
+    sql += ' ORDER BY detected_at ASC'
     if (opts?.limit) {
-      result = result.slice(-opts.limit)
+      sql += ' LIMIT ?'
+      params.push(opts.limit)
     }
-    return result
+    const rows = this.db.prepare(sql).all(...params) as { data: string }[]
+    return rows.map((r) => JSON.parse(r.data) as NewsCandidate)
   }
 
   async addBriefs(stationId: string, briefs: EditorialBrief[]): Promise<void> {
-    const fp = this.briefsPath(stationId)
-    await this.withLock(fp, async () => {
-      const existing = await this.readJson<EditorialBrief>(fp)
-      const existingIds = new Set(existing.map((b) => b.id))
-      const newOnes = briefs.filter((b) => !existingIds.has(b.id))
-      if (newOnes.length === 0) return
-      const merged = [...existing, ...newOnes]
-      const trimmed = merged.slice(-200)
-      await this.writeJson(fp, trimmed, stationId)
+    const existingRows = this.db.prepare('SELECT data FROM briefs WHERE station_id = ?').all(stationId) as { data: string }[]
+    const existing = existingRows.map((r) => JSON.parse(r.data) as EditorialBrief)
+
+    const existingIds = new Set(existing.map((b) => b.id))
+    const existingHeadlines = existing.map((b) => normalizeHeadline(b.headline))
+    const existingCandidateIds = new Set(existing.flatMap((b) => b.relatedCandidateIds))
+
+    const insert = this.db.prepare('INSERT OR IGNORE INTO briefs (id, station_id, data, generated_at, used) VALUES (?, ?, ?, ?, ?)')
+    const count = this.db.prepare('SELECT COUNT(*) as cnt FROM briefs WHERE station_id = ?')
+
+    const txn = this.db.transaction(() => {
+      for (const b of briefs) {
+        if (existingIds.has(b.id)) continue
+        const norm = normalizeHeadline(b.headline)
+        if (existingHeadlines.some((h) => headlineSimilarity(h, norm) >= 0.75)) continue
+        if (b.relatedCandidateIds.length > 0 && b.relatedCandidateIds.every((id) => existingCandidateIds.has(id))) continue
+        insert.run(b.id, stationId, JSON.stringify(b), b.generatedAt, b.used ? 1 : 0)
+      }
+      // Trim to 200 per station
+      const { cnt } = count.get(stationId) as { cnt: number }
+      if (cnt > 200) {
+        this.db.prepare(`DELETE FROM briefs WHERE station_id = ? AND id IN (
+          SELECT id FROM briefs WHERE station_id = ? ORDER BY generated_at ASC LIMIT ?
+        )`).run(stationId, stationId, cnt - 200)
+      }
     })
+    txn()
   }
 
   async getBriefs(stationId: string, opts?: { since?: number; limit?: number; pendingOnly?: boolean }): Promise<EditorialBrief[]> {
-    const all = await this.readJson<EditorialBrief>(this.briefsPath(stationId))
-    let result = all
+    let sql = 'SELECT data FROM briefs WHERE station_id = ?'
+    const params: (string | number)[] = [stationId]
     if (opts?.pendingOnly) {
-      result = result.filter((b) => !b.used)
+      sql += ' AND used = 0'
     }
     if (opts?.since) {
-      result = result.filter((b) => b.generatedAt >= opts.since!)
+      sql += ' AND generated_at >= ?'
+      params.push(opts.since)
     }
+    sql += ' ORDER BY generated_at ASC'
     if (opts?.limit) {
-      result = result.slice(-opts.limit)
+      sql += ' LIMIT ?'
+      params.push(opts.limit)
     }
-    return result
+    const rows = this.db.prepare(sql).all(...params) as { data: string }[]
+    return rows.map((r) => JSON.parse(r.data) as EditorialBrief)
+  }
+
+  private getBrief(stationId: string, briefId: string): EditorialBrief | null {
+    const row = this.db.prepare('SELECT data FROM briefs WHERE station_id = ? AND id = ?').get(stationId, briefId) as { data: string } | undefined
+    return row ? JSON.parse(row.data) as EditorialBrief : null
+  }
+
+  private saveBrief(stationId: string, brief: EditorialBrief): void {
+    this.db.prepare('UPDATE briefs SET data = ?, used = ? WHERE station_id = ? AND id = ?')
+      .run(JSON.stringify(brief), brief.used ? 1 : 0, stationId, brief.id)
   }
 
   async markBriefUsed(stationId: string, briefId: string): Promise<void> {
-    const fp = this.briefsPath(stationId)
-    await this.withLock(fp, async () => {
-      const all = await this.readJson<EditorialBrief>(fp)
-      const idx = all.findIndex((b) => b.id === briefId)
-      if (idx === -1) return
-      all[idx].used = true
-      const log = all[idx].activityLog ?? []
-      log.push({ timestamp: Date.now(), action: 'sent', detail: 'Marked as used' })
-      all[idx].activityLog = log
-      await this.writeJson(fp, all, stationId)
-    })
+    const brief = this.getBrief(stationId, briefId)
+    if (!brief) return
+    brief.used = true
+    const log = brief.activityLog ?? []
+    log.push({ timestamp: Date.now(), action: 'sent', detail: 'Marked as used' })
+    brief.activityLog = log
+    this.saveBrief(stationId, brief)
   }
 
   async sendBrief(stationId: string, briefId: string, method: string): Promise<EditorialBrief | null> {
-    const fp = this.briefsPath(stationId)
-    return this.withLock(fp, async () => {
-      const all = await this.readJson<EditorialBrief>(fp)
-      const idx = all.findIndex((b) => b.id === briefId)
-      if (idx === -1) return null
-      const now = Date.now()
-      all[idx].used = true
-      all[idx].sentAt = all[idx].sentAt ?? now
-      all[idx].sentCount = (all[idx].sentCount ?? 0) + 1
-      const log = all[idx].activityLog ?? []
-      log.push({ timestamp: now, action: 'sent', detail: `Sent as ${method}` })
-      all[idx].activityLog = log
-      await this.writeJson(fp, all, stationId)
-      return all[idx]
-    })
+    const brief = this.getBrief(stationId, briefId)
+    if (!brief) return null
+    const now = Date.now()
+    brief.used = true
+    brief.sentAt = brief.sentAt ?? now
+    brief.sentCount = (brief.sentCount ?? 0) + 1
+    const log = brief.activityLog ?? []
+    log.push({ timestamp: now, action: 'sent', detail: `Sent as ${method}` })
+    brief.activityLog = log
+    this.saveBrief(stationId, brief)
+    return brief
   }
 
   async addBriefLogEntry(stationId: string, briefId: string, entry: ActivityLogEntry): Promise<EditorialBrief | null> {
-    const fp = this.briefsPath(stationId)
-    return this.withLock(fp, async () => {
-      const all = await this.readJson<EditorialBrief>(fp)
-      const idx = all.findIndex((b) => b.id === briefId)
-      if (idx === -1) return null
-      const log = all[idx].activityLog ?? []
-      log.push(entry)
-      all[idx].activityLog = log
-      all[idx].lastUpdatedAt = entry.timestamp
-      await this.writeJson(fp, all, stationId)
-      return all[idx]
-    })
+    const brief = this.getBrief(stationId, briefId)
+    if (!brief) return null
+    const log = brief.activityLog ?? []
+    log.push(entry)
+    brief.activityLog = log
+    brief.lastUpdatedAt = entry.timestamp
+    this.saveBrief(stationId, brief)
+    return brief
   }
 
   async updateBrief(stationId: string, brief: EditorialBrief): Promise<void> {
-    const fp = this.briefsPath(stationId)
-    await this.withLock(fp, async () => {
-      const all = await this.readJson<EditorialBrief>(fp)
-      const idx = all.findIndex((b) => b.id === brief.id)
-      if (idx === -1) return
-      all[idx] = brief
-      await this.writeJson(fp, all, stationId)
-    })
+    this.saveBrief(stationId, brief)
   }
 }

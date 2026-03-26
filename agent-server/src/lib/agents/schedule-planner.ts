@@ -2,26 +2,37 @@ import { GoogleGenAI, Type } from '@google/genai'
 import { randomBytes } from 'node:crypto'
 import type { ScheduleStore } from '../schedule-store.js'
 import type { NewsStore } from '../news-store.js'
+import type { StationStore } from '../station-store.js'
 import type { DailyMemory } from '../daily-memory.js'
-import type { EditorialBrief } from '../../types/news.js'
+import type { EditorialBrief, EnrichmentReport } from '../../types/news.js'
 import type { ScheduleBlock, DaySchedule } from '../../types/schedule.js'
+import type { ResearchAgent } from './research-agent.js'
+import type { ArticleEnricher } from './article-enricher.js'
 
-const GUEST_VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede', 'Leda', 'Zephyr']
+const GUEST_VOICE_MAP: Record<string, string> = {
+  'Sarah': 'EXAVITQu4vr4xnSDxMaL',
+  'Jessica': 'cgSgspJ2msm6clMCkdW9',
+  'Lily': 'pFZP5JQG7iQjIQuC4Bku',
+  'Roger': 'CwhRBWXzGAHq8TQ4Fs17',
+  'Eric': 'cjVigY5qzO86Huf0OWal',
+  'George': 'JBFqnCBsd6RMkjVDRZzb',
+}
+const GUEST_VOICES = Object.keys(GUEST_VOICE_MAP)
 
 const SYSTEM_PROMPT = `You are a radio schedule planner for "Pulse", a 24/7 AI radio station covering AI, startups, and technology.
 
-Given a list of news briefs and available music tracks, generate a schedule for the NEXT FEW HOURS (the time window provided). Do NOT fill the entire day — only plan what's needed for the given window.
+Given a list of news briefs (some are news stories, some are evergreen/feature topics) and available music tracks, generate a schedule for the NEXT FEW HOURS (the time window provided). Do NOT fill the entire day — only plan what's needed for the given window.
 
 ## Block Types
 
-1. **topic** — A news segment. Each brief becomes one topic block. Duration: 8-12 minutes depending on importance.
+1. **topic** — A segment covering a brief (news or evergreen). Each brief becomes one topic block. Duration: 8-12 minutes depending on importance.
 2. **music** — A music transition between segments. Duration: 3-5 minutes. Place one between every 2-3 topic blocks.
 3. **guest** — An AI expert guest discusses a topic with the host. Duration: 10-15 minutes. Include 1-2 per planning window if there are enough topics. Pick the most interesting/debatable story for the guest. Invent a realistic expert name and expertise area relevant to the story.
 4. **calls** — Open phone lines for listener call-ins. Duration: 5-10 minutes. Include at most 1 per window, usually after a hot topic.
 
 ## Rules
 
-1. Start with the highest-priority and breaking news first.
+1. Start with the highest-priority and breaking news first. Evergreen topics should fill gaps after news.
 2. Alternate between topics and music — never put 3+ topics back to back without a music break.
 3. Guest blocks replace a topic block for that story (the guest discusses it instead).
 4. All startTime values must be in HH:mm format (24-hour).
@@ -29,11 +40,12 @@ Given a list of news briefs and available music tracks, generate a schedule for 
 6. Use only tracks from the available tracks list for music blocks.
 7. For topic blocks, use the brief's report.broadcastSummary as the description if available, otherwise use the summary. Include report.turnPrompts if available.
 8. For guest blocks, invent a plausible expert (not a real public figure) — a researcher, founder, analyst, etc.
-9. Pick guest voices from this list: Puck, Charon, Kore, Fenrir, Aoede, Leda, Zephyr. Vary them.
+9. Pick guest voices from this list: Sarah, Jessica, Lily, Roger, Eric, George. Vary them.
 10. You should plan for the entire time window provided. Keep the radio busy.
-11. Every brief provided should ideally appear in the schedule unless there are too many for the window.
+11. Schedule ALL the briefs provided — they have already been pre-selected to fit the window. Do not skip any unless the show history indicates it was already covered.
 12. You will receive a SHOW HISTORY with what was covered in the last 2 days. Do NOT repeat topics that were already covered UNLESS the brief explicitly contains new developments or updates. If a story has updates, frame the block title to reflect the update (e.g. "UPDATE: ...", "New details on ...").
-13. Use the show history to maintain narrative continuity — reference back to earlier coverage when relevant.`
+13. Use the show history to maintain narrative continuity — reference back to earlier coverage when relevant.
+14. Briefs marked as [EVERGREEN] are feature/discussion topics, not breaking news. Place them AFTER news stories. They are great candidates for guest blocks.`
 
 const BLOCK_SCHEMA = {
   type: Type.ARRAY,
@@ -82,10 +94,38 @@ interface PlannedBlock {
   callsTopic?: string
 }
 
+// Average minutes per content slot (topic/guest ~10min + music break ~4min)
+const AVG_SLOT_MINUTES = 14
+const MAX_SLOTS_PER_WINDOW = 6
+
+const EVERGREEN_SYSTEM = `You are a creative radio programmer for "Pulse", a 24/7 AI radio station. Given the station's niche, recent show history, and number of slots to fill, propose interesting EVERGREEN discussion topics.
+
+Evergreen topics are NOT breaking news — they are feature segments, deep dives, explainers, debates, or trend analyses that are always relevant and interesting to the audience. Examples:
+- "The state of AI regulation worldwide in 2026"
+- "How startups are rethinking hiring with AI agents"
+- "Open source vs closed source models: who's winning?"
+- "The psychology of AI hype cycles"
+- "Building AI products: lessons from failed startups"
+
+Rules:
+- Each topic must be specific enough to research and discuss for 10-15 minutes
+- Avoid topics already covered in the show history
+- Avoid topics from the PREVIOUSLY USED list
+- Mix formats: some analytical, some provocative/debate-worthy, some educational
+- Return ONLY the topic titles as a JSON array of strings`
+
+const EVERGREEN_SCHEMA = {
+  type: Type.ARRAY,
+  items: { type: Type.STRING },
+}
+
 export interface SchedulePlannerDeps {
   scheduleStore: ScheduleStore
   newsStore: NewsStore
+  stationStore: StationStore
   dailyMemory?: DailyMemory
+  researchAgent?: ResearchAgent
+  articleEnricher?: ArticleEnricher
 }
 
 export class SchedulePlanner {
@@ -122,6 +162,102 @@ export class SchedulePlanner {
     return parts.join('\n')
   }
 
+  /**
+   * Generate evergreen topic briefs to fill empty slots.
+   * Each topic is researched and enriched to produce a full report with turnPrompts.
+   */
+  private async generateEvergreenBriefs(stationId: string, count: number, showHistory: string): Promise<EditorialBrief[]> {
+    if (count <= 0 || !this.deps.researchAgent || !this.deps.articleEnricher) return []
+
+    const station = await this.deps.stationStore.getStation(stationId)
+    const niche = station?.niche ?? 'AI, startups, and technology'
+
+    // Load past evergreen headlines to avoid repetition
+    const allBriefs = await this.deps.newsStore.getBriefs(stationId)
+    const pastEvergreen = allBriefs
+      .filter((b) => b.id.startsWith('eg-'))
+      .map((b) => b.headline)
+    const pastList = pastEvergreen.length > 0
+      ? `\nPREVIOUSLY USED EVERGREEN TOPICS (do NOT repeat or rephrase these):\n${pastEvergreen.map((h) => `- ${h}`).join('\n')}`
+      : ''
+
+    console.log(`[schedule-planner] generating ${count} evergreen topics for niche: ${niche} (${pastEvergreen.length} past topics excluded)`)
+
+    const prompt = [
+      `Station niche: ${niche}`,
+      `Number of topics needed: ${count}`,
+      showHistory ? `\nSHOW HISTORY (avoid these):\n${showHistory}` : '',
+      pastList,
+      `\nGenerate ${count} evergreen topic titles.`,
+    ].filter(Boolean).join('\n')
+
+    let topics: string[] = []
+    try {
+      const response = await this.ai.models.generateContent({
+        model: 'gemini-3.1-pro-preview',
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        config: {
+          systemInstruction: EVERGREEN_SYSTEM,
+          responseMimeType: 'application/json',
+          responseSchema: EVERGREEN_SCHEMA,
+          temperature: 0.9,
+        },
+      })
+      topics = JSON.parse(response.text ?? '[]')
+      if (!Array.isArray(topics)) topics = []
+    } catch (err) {
+      console.warn(`[schedule-planner] evergreen topic generation failed: ${(err as Error).message}`)
+      return []
+    }
+
+    console.log(`[schedule-planner] generated ${topics.length} evergreen topics, researching...`)
+
+    // Research + enrich each topic in parallel (bounded)
+    const results: EditorialBrief[] = []
+    for (const topic of topics.slice(0, count)) {
+      try {
+        // Create a synthetic brief for the research pipeline
+        let syntheticBrief: EditorialBrief = {
+          id: `eg-${randomBytes(6).toString('hex')}`,
+          headline: topic,
+          summary: `Evergreen feature topic: ${topic}`,
+          confidence: 'confirmed',
+          priority: 30,
+          isBreaking: false,
+          sources: [],
+          relatedCandidateIds: [],
+          generatedAt: Date.now(),
+          used: false,
+        }
+
+        // Phase 1: Research via Google Search + Firecrawl
+        syntheticBrief = await this.deps.researchAgent!.research(syntheticBrief)
+
+        // Phase 2: Enrich to generate full report with turnPrompts
+        syntheticBrief = await this.deps.articleEnricher!.enrichBrief(syntheticBrief, [])
+
+        if (syntheticBrief.report?.turnPrompts?.length) {
+          results.push(syntheticBrief)
+          console.log(`[schedule-planner] evergreen ready: "${topic.slice(0, 60)}"`)
+        } else {
+          console.warn(`[schedule-planner] evergreen skipped (no turnPrompts): "${topic.slice(0, 60)}"`)
+        }
+      } catch (err) {
+        console.warn(`[schedule-planner] evergreen research failed for "${topic.slice(0, 40)}": ${(err as Error).message}`)
+      }
+    }
+
+    // Persist evergreen briefs to the store as used so they won't repeat
+    if (results.length > 0) {
+      const toStore = results.map((b) => ({ ...b, used: true }))
+      await this.deps.newsStore.addBriefs(stationId, toStore).catch((err) =>
+        console.warn(`[schedule-planner] failed to persist evergreen briefs: ${(err as Error).message}`)
+      )
+    }
+
+    return results
+  }
+
   async plan(stationId: string, availableTracks: string[], windowHours = 3): Promise<ScheduleBlock[]> {
     const now = new Date()
     const date = now.toISOString().slice(0, 10)
@@ -129,12 +265,15 @@ export class SchedulePlanner {
 
     // Get existing schedule — preserve completed/active blocks
     const existing = await this.deps.scheduleStore.getSchedule(date)
-    const preserved = existing.blocks.filter((b) => b.status === 'completed' || b.status === 'active')
-    const pendingIds = new Set(existing.blocks.filter((b) => b.status === 'pending').map((b) => b.id))
+    // Preserve completed, active, and skipped blocks always.
+    const preserved = existing.blocks.filter((b) =>
+      b.status === 'completed' || b.status === 'active' || b.status === 'skipped'
+    )
 
     // Find the latest end time among completed/active blocks or use current time
     let windowStart = currentMinutes
     for (const b of preserved) {
+      if (b.status !== 'completed' && b.status !== 'active') continue
       const bEnd = toMinutes(b.startTime) + b.durationMinutes
       if (bEnd > windowStart) windowStart = bEnd
     }
@@ -142,17 +281,28 @@ export class SchedulePlanner {
     windowStart = Math.ceil(windowStart / 5) * 5
     const windowEnd = Math.min(windowStart + windowHours * 60, 24 * 60)
 
+    // Preserve pending blocks that fall OUTSIDE the planning window
+    // (e.g. manually created blocks for later times)
+    const pendingOutsideWindow = existing.blocks.filter((b) => {
+      if (b.status !== 'pending') return false
+      const bStart = toMinutes(b.startTime)
+      return bStart >= windowEnd || (bStart + b.durationMinutes) <= windowStart
+    })
+
     if (windowEnd - windowStart < 15) {
       console.log('[schedule-planner] not enough time in window, skipping')
       return []
     }
 
-    // Get pending briefs
-    const briefs = await this.deps.newsStore.getBriefs(stationId, { pendingOnly: true })
-    if (briefs.length === 0) {
-      console.log('[schedule-planner] no pending briefs available')
-      return []
-    }
+    // Calculate how many content slots fit in the window (capped)
+    const windowMinutes = windowEnd - windowStart
+    const maxSlots = Math.min(MAX_SLOTS_PER_WINDOW, Math.floor(windowMinutes / AVG_SLOT_MINUTES))
+
+    // Get pending briefs — only take what fits, sorted by priority
+    const allBriefs = await this.deps.newsStore.getBriefs(stationId, { pendingOnly: true })
+    const sortedBriefs = allBriefs.sort((a, b) => b.priority - a.priority)
+    const briefs = sortedBriefs.slice(0, maxSlots)
+    const reservedCount = allBriefs.length - briefs.length
 
     const startTimeStr = minutesToTime(windowStart)
     const endTimeStr = minutesToTime(windowEnd)
@@ -160,10 +310,27 @@ export class SchedulePlanner {
     // Gather show history from last 2 days
     const showHistory = await this.getRecentHistory(date)
 
-    console.log(`[schedule-planner] planning ${startTimeStr}-${endTimeStr} with ${briefs.length} briefs and ${availableTracks.length} tracks`)
+    // Generate evergreen topics if not enough news briefs to fill the window
+    const evergreenSlotsNeeded = Math.max(0, maxSlots - briefs.length)
+    let evergreenBriefs: EditorialBrief[] = []
+    if (evergreenSlotsNeeded > 0) {
+      evergreenBriefs = await this.generateEvergreenBriefs(stationId, evergreenSlotsNeeded, showHistory)
+    }
 
-    const briefsSummary = briefs.map((b) => {
-      let entry = `[${b.id}] "${b.headline}" (priority: ${b.priority}, confidence: ${b.confidence}, breaking: ${b.isBreaking})\nSummary: ${b.summary}`
+    const allSchedulableBriefs = [...briefs, ...evergreenBriefs]
+    if (allSchedulableBriefs.length === 0) {
+      console.log('[schedule-planner] no briefs or evergreen topics available')
+      return []
+    }
+
+    if (reservedCount > 0) {
+      console.log(`[schedule-planner] reserved ${reservedCount} briefs for future windows`)
+    }
+    console.log(`[schedule-planner] planning ${startTimeStr}-${endTimeStr} with ${briefs.length} news + ${evergreenBriefs.length} evergreen briefs and ${availableTracks.length} tracks`)
+
+    const briefsSummary = allSchedulableBriefs.map((b) => {
+      const isEvergreen = b.id.startsWith('eg-')
+      let entry = `[${b.id}]${isEvergreen ? ' [EVERGREEN]' : ''} "${b.headline}" (priority: ${b.priority}, confidence: ${b.confidence}, breaking: ${b.isBreaking})\nSummary: ${b.summary}`
       if (b.report) {
         entry += `\nBroadcast summary: ${b.report.broadcastSummary}`
         if (b.report.turnPrompts?.length) {
@@ -234,11 +401,11 @@ Generate the blocks array. Start the first block at ${startTimeStr}. All blocks 
         startTime: p.startTime,
         durationMinutes: Math.max(1, Math.round(p.durationMinutes)),
         status: 'pending',
-        config: buildConfig(p, briefs),
+        config: buildConfig(p, allSchedulableBriefs),
       }
 
-      // Check overlap against preserved + already-added new blocks
-      const allBlocks = [...preserved, ...newBlocks]
+      // Check overlap against preserved + outside-window pending + already-added new blocks
+      const allBlocks = [...preserved, ...pendingOutsideWindow, ...newBlocks]
       if (hasOverlap(allBlocks, block)) continue
 
       newBlocks.push(block)
@@ -251,21 +418,25 @@ Generate the blocks array. Start the first block at ${startTimeStr}. All blocks 
       return []
     }
 
-    // Remove old pending blocks and add new ones
+    // Keep preserved + outside-window pending + new AI-generated blocks
     const finalBlocks = [
       ...preserved,
+      ...pendingOutsideWindow,
       ...newBlocks,
     ].sort((a, b) => a.startTime.localeCompare(b.startTime))
 
     const schedule: DaySchedule = { date, blocks: finalBlocks }
     await this.deps.scheduleStore.saveSchedule(schedule)
 
-    // Mark used briefs
+    // Mark used news briefs (skip evergreen — they aren't in the store)
     for (const briefId of usedBriefIds) {
+      if (briefId.startsWith('eg-')) continue
       await this.deps.newsStore.sendBrief(stationId, briefId, 'schedule-planner').catch(() => {})
     }
 
-    console.log(`[schedule-planner] created ${newBlocks.length} blocks, marked ${usedBriefIds.size} briefs as used`)
+    const newsUsed = [...usedBriefIds].filter((id) => !id.startsWith('eg-')).length
+    const evergreenUsed = [...usedBriefIds].filter((id) => id.startsWith('eg-')).length
+    console.log(`[schedule-planner] created ${newBlocks.length} blocks (${newsUsed} news, ${evergreenUsed} evergreen), ${reservedCount} briefs reserved`)
     return newBlocks
   }
 }
@@ -313,7 +484,7 @@ function buildConfig(p: PlannedBlock, briefs: EditorialBrief[]): ScheduleBlock['
         name: p.guestName || 'AI Expert',
         expertise: p.guestExpertise || 'Technology',
         topic: p.guestTopic || brief?.headline || p.title,
-        voice: GUEST_VOICES.includes(p.guestVoice ?? '') ? p.guestVoice! : 'Aoede',
+        voice: GUEST_VOICE_MAP[p.guestVoice ?? ''] ?? GUEST_VOICE_MAP['Sarah'],
       }
     case 'music':
       return {

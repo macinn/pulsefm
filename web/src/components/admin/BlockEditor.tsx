@@ -12,6 +12,7 @@ import {
   Zap,
   Trash2,
   Plus,
+  AlertCircle,
 } from "lucide-react";
 import type {
   ScheduleBlock,
@@ -26,13 +27,12 @@ import type {
 import * as scheduleService from "@/services/schedule-service";
 
 const GUEST_VOICES = [
-  { value: "Aoede", label: "Aoede" },
-  { value: "Kore", label: "Kore" },
-  { value: "Puck", label: "Puck" },
-  { value: "Charon", label: "Charon" },
-  { value: "Fenrir", label: "Fenrir" },
-  { value: "Leda", label: "Leda" },
-  { value: "Zephyr", label: "Zephyr" },
+  { value: "EXAVITQu4vr4xnSDxMaL", label: "Sarah" },
+  { value: "cgSgspJ2msm6clMCkdW9", label: "Jessica" },
+  { value: "pFZP5JQG7iQjIQuC4Bku", label: "Lily" },
+  { value: "CwhRBWXzGAHq8TQ4Fs17", label: "Roger" },
+  { value: "cjVigY5qzO86Huf0OWal", label: "Eric" },
+  { value: "JBFqnCBsd6RMkjVDRZzb", label: "George" },
 ];
 
 const TYPE_OPTIONS: { value: BlockType; label: string; icon: typeof Radio }[] = [
@@ -94,6 +94,7 @@ export default function BlockEditor({ date, block, readOnly, initialValues, onCl
   const [duration, setDuration] = useState(block?.durationMinutes ?? initialValues?.durationMinutes ?? 5);
   const [config, setConfig] = useState<BlockConfig>(block?.config ?? initialValues?.config ?? defaultConfig("topic"));
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [tracks, setTracks] = useState<string[]>([]);
 
   // Fetch available tracks for music blocks
@@ -126,6 +127,7 @@ export default function BlockEditor({ date, block, readOnly, initialValues, onCl
     if (!title.trim() || !startTime) return;
 
     setSaving(true);
+    setError(null);
     try {
       const effectiveStartTime = startNow ? currentHHmm() : startTime;
       if (isEditing) {
@@ -154,7 +156,8 @@ export default function BlockEditor({ date, block, readOnly, initialValues, onCl
       onSaved();
       onClose();
     } catch (err) {
-      console.error("[block-editor] save failed:", err);
+      const msg = err instanceof Error ? err.message : 'Failed to save block';
+      setError(msg);
     } finally {
       setSaving(false);
     }
@@ -172,6 +175,14 @@ export default function BlockEditor({ date, block, readOnly, initialValues, onCl
             <X className="w-4 h-4" />
           </button>
         </div>
+
+        {/* Error banner */}
+        {error && (
+          <div className="mb-4 flex items-start gap-2 rounded-lg bg-red-500/10 border border-red-500/30 px-3 py-2.5 text-sm text-red-300">
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-red-400" />
+            <span>{error}</span>
+          </div>
+        )}
 
         <form onSubmit={readOnly ? (e: React.FormEvent) => e.preventDefault() : handleSubmit} className="space-y-4 min-w-0">
           <fieldset disabled={readOnly} className={readOnly ? "space-y-4 opacity-60 min-w-0" : "space-y-4 min-w-0"}>

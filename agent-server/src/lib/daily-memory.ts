@@ -1,19 +1,13 @@
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
-import path from 'node:path'
+import type Database from 'better-sqlite3'
 import type { ScheduleStore } from './schedule-store.js'
 
 export class DailyMemory {
-  private baseDir: string
+  private db: Database.Database
   private scheduleStore: ScheduleStore
 
-  constructor(dataDir: string, scheduleStore: ScheduleStore) {
-    this.baseDir = path.join(dataDir, 'memory')
+  constructor(db: Database.Database, scheduleStore: ScheduleStore) {
+    this.db = db
     this.scheduleStore = scheduleStore
-  }
-
-  private filePath(date: string): string {
-    return path.join(this.baseDir, `${date}.md`)
   }
 
   private today(): string {
@@ -26,42 +20,32 @@ export class DailyMemory {
 
   async addEntry(text: string, date?: string): Promise<void> {
     const d = date ?? this.today()
-    const fp = this.filePath(d)
-
-    if (!existsSync(this.baseDir)) {
-      await mkdir(this.baseDir, { recursive: true })
-    }
-
     const line = `- [${this.timestamp()}] ${text}\n`
-
-    if (existsSync(fp)) {
-      const existing = await readFile(fp, 'utf-8')
-      await writeFile(fp, existing + line, 'utf-8')
+    const row = this.db.prepare('SELECT content FROM daily_memory WHERE date = ?').get(d) as { content: string } | undefined
+    if (row) {
+      this.db.prepare('UPDATE daily_memory SET content = ? WHERE date = ?').run(row.content + line, d)
     } else {
       const header = `# Pulse Daily Memory — ${d}\n\n`
-      await writeFile(fp, header + line, 'utf-8')
+      this.db.prepare('INSERT INTO daily_memory (date, content) VALUES (?, ?)').run(d, header + line)
     }
   }
 
   async getMemory(date?: string): Promise<string> {
     const d = date ?? this.today()
-    const fp = this.filePath(d)
-    if (!existsSync(fp)) return ''
-    return readFile(fp, 'utf-8')
+    const row = this.db.prepare('SELECT content FROM daily_memory WHERE date = ?').get(d) as { content: string } | undefined
+    return row?.content ?? ''
   }
 
   async buildContext(): Promise<string> {
     const date = this.today()
     const parts: string[] = []
 
-    // Past: what happened today
     const memory = await this.getMemory(date)
     if (memory) {
       parts.push('=== SHOW MEMORY (what happened today) ===')
       parts.push(memory.replace(/^# .+\n\n/, ''))
     }
 
-    // Future: what's coming up
     const schedule = await this.scheduleStore.getSchedule(date)
     const upcoming = schedule.blocks
       .filter((b) => b.status === 'pending')

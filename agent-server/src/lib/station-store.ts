@@ -1,6 +1,4 @@
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
-import path from 'node:path'
+import type Database from 'better-sqlite3'
 import type { StationConfig } from '../types/station.js'
 
 export interface StationStore {
@@ -11,66 +9,38 @@ export interface StationStore {
   deleteStation(id: string): Promise<boolean>
 }
 
-export class JsonFileStationStore implements StationStore {
-  private dir: string
+export class SqliteStationStore implements StationStore {
+  private db: Database.Database
 
-  constructor(dataDir: string) {
-    this.dir = dataDir
-  }
-
-  private filePath(): string {
-    return path.join(this.dir, 'stations.json')
-  }
-
-  private async ensureDir(): Promise<void> {
-    if (!existsSync(this.dir)) {
-      await mkdir(this.dir, { recursive: true })
-    }
-  }
-
-  private async readAll(): Promise<StationConfig[]> {
-    const fp = this.filePath()
-    if (!existsSync(fp)) return []
-    const raw = await readFile(fp, 'utf-8')
-    return JSON.parse(raw) as StationConfig[]
-  }
-
-  private async writeAll(stations: StationConfig[]): Promise<void> {
-    await this.ensureDir()
-    await writeFile(this.filePath(), JSON.stringify(stations, null, 2), 'utf-8')
+  constructor(db: Database.Database) {
+    this.db = db
   }
 
   async listStations(): Promise<StationConfig[]> {
-    return this.readAll()
+    const rows = this.db.prepare('SELECT data FROM stations').all() as { data: string }[]
+    return rows.map((r) => JSON.parse(r.data) as StationConfig)
   }
 
   async getStation(id: string): Promise<StationConfig | null> {
-    const all = await this.readAll()
-    return all.find((s) => s.id === id) ?? null
+    const row = this.db.prepare('SELECT data FROM stations WHERE id = ?').get(id) as { data: string } | undefined
+    return row ? JSON.parse(row.data) as StationConfig : null
   }
 
   async createStation(config: StationConfig): Promise<StationConfig> {
-    const all = await this.readAll()
-    all.push(config)
-    await this.writeAll(all)
+    this.db.prepare('INSERT OR REPLACE INTO stations (id, data) VALUES (?, ?)').run(config.id, JSON.stringify(config))
     return config
   }
 
   async updateStation(id: string, partial: Partial<StationConfig>): Promise<StationConfig | null> {
-    const all = await this.readAll()
-    const idx = all.findIndex((s) => s.id === id)
-    if (idx === -1) return null
-    all[idx] = { ...all[idx], ...partial, id }
-    await this.writeAll(all)
-    return all[idx]
+    const existing = await this.getStation(id)
+    if (!existing) return null
+    const updated = { ...existing, ...partial, id }
+    this.db.prepare('UPDATE stations SET data = ? WHERE id = ?').run(JSON.stringify(updated), id)
+    return updated
   }
 
   async deleteStation(id: string): Promise<boolean> {
-    const all = await this.readAll()
-    const before = all.length
-    const filtered = all.filter((s) => s.id !== id)
-    if (filtered.length === before) return false
-    await this.writeAll(filtered)
-    return true
+    const result = this.db.prepare('DELETE FROM stations WHERE id = ?').run(id)
+    return result.changes > 0
   }
 }

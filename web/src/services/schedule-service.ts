@@ -26,7 +26,10 @@ export async function addBlock(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(block),
   })
-  if (!res.ok) throw new Error(`Failed to add block: ${res.status}`)
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(body?.error ?? `Failed to add block: ${res.status}`)
+  }
   return res.json()
 }
 
@@ -40,7 +43,10 @@ export async function updateBlock(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(partial),
   })
-  if (!res.ok) throw new Error(`Failed to update block: ${res.status}`)
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(body?.error ?? `Failed to update block: ${res.status}`)
+  }
   return res.json()
 }
 
@@ -63,7 +69,10 @@ export async function executeBlock(date: string, blockId: string): Promise<void>
   const res = await fetch(`${getApiUrl()}/schedule/${date}/blocks/${blockId}/execute`, {
     method: 'POST',
   })
-  if (!res.ok) throw new Error(`Failed to execute block: ${res.status}`)
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(body?.error ?? `Failed to execute block: ${res.status}`)
+  }
 }
 
 export async function fetchTracks(): Promise<string[]> {

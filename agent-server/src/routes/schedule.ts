@@ -1,9 +1,11 @@
 import { Hono } from 'hono'
 import { randomBytes } from 'node:crypto'
 import type { ScheduleStore } from '../lib/schedule-store.js'
+import type { NewsStore } from '../lib/news-store.js'
 import type { SchedulePlanner } from '../lib/agents/schedule-planner.js'
 import type { AutoPilot } from '../lib/auto-pilot.js'
 import type { ScheduleBlock, BlockConfig } from '../types/schedule.js'
+import type { OpLocks } from '../lib/op-locks.js'
 
 function genId(): string {
   return randomBytes(8).toString('hex')
@@ -35,6 +37,8 @@ export function createScheduleRoutes(
   schedulePlanner?: SchedulePlanner,
   getAvailableTracks?: () => string[],
   autoPilot?: AutoPilot,
+  newsStore?: NewsStore,
+  opLocks?: OpLocks,
 ) {
   const api = new Hono()
 
@@ -170,6 +174,10 @@ export function createScheduleRoutes(
     if (!DATE_RE.test(date)) return c.json({ error: 'Invalid date format' }, 400)
     if (!schedulePlanner) return c.json({ error: 'Schedule planner not configured' }, 501)
 
+    if (opLocks && !opLocks.acquire('auto-generate')) {
+      return c.json({ error: 'Auto-generate already in progress' }, 409)
+    }
+
     const body = await c.req.json<{ windowHours?: number; stationId?: string; scanFirst?: boolean }>().catch((): { windowHours?: number; stationId?: string; scanFirst?: boolean } => ({}))
     const stationId = body.stationId || 'pulse-ai'
     const windowHours = body.windowHours || 3
@@ -178,9 +186,15 @@ export function createScheduleRoutes(
 
     try {
       if (scanFirst && autoPilot) {
-        console.log('[schedule/auto-generate] scanning for news first...')
-        await autoPilot.scan()
-        await autoPilot.process()
+        // Only scan if there are few pending briefs to work with
+        const existingBriefs = await newsStore?.getBriefs(stationId, { pendingOnly: true })
+        if (!existingBriefs || existingBriefs.length <= 3) {
+          console.log(`[schedule/auto-generate] only ${existingBriefs?.length ?? 0} pending briefs — scanning for more...`)
+          await autoPilot.scan()
+          await autoPilot.process()
+        } else {
+          console.log(`[schedule/auto-generate] ${existingBriefs.length} pending briefs available, skipping scan`)
+        }
       }
 
       const blocks = await schedulePlanner.plan(stationId, tracks, windowHours)
@@ -188,6 +202,8 @@ export function createScheduleRoutes(
     } catch (err) {
       console.error('[schedule/auto-generate] error:', err)
       return c.json({ error: 'Auto-generation failed' }, 500)
+    } finally {
+      opLocks?.release('auto-generate')
     }
   })
 

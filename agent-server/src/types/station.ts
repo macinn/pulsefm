@@ -16,13 +16,12 @@ export interface GeminiSearchConfig {
   searchIntervalMinutes: number
 }
 
-export interface NewsDataConfig {
+export interface FirecrawlConfig {
   keywords: string[]
-  language: string
-  categories?: string[]
+  limit?: number
 }
 
-export type SourceConfigData = RssSourceConfig | RedditSourceConfig | GeminiSearchConfig | NewsDataConfig
+export type SourceConfigData = RssSourceConfig | RedditSourceConfig | GeminiSearchConfig | FirecrawlConfig
 
 export interface SourceConfig {
   id: string
