@@ -180,6 +180,21 @@ export class WebSocketRadioService implements RadioService {
   }
 
   startCall(name: string, mode: CallMode): void {
+    if (!this.state.callsOpen) {
+      this.update({
+        callerStatus: "ended",
+        callRouting: "none",
+        callRejectedReason: "Phone lines are closed right now. Try again during the call-in segment!",
+      });
+      setTimeout(() => this.update({
+        callerStatus: "idle",
+        callerName: "",
+        callerMode: "audio",
+        callRouting: "none",
+        callRejectedReason: null,
+      }), 3000);
+      return;
+    }
     this.update({ callerStatus: "connecting", callerName: name, callerMode: mode, callRouting: "none" });
     this.sendMessage({ type: "call-start", name, mode });
   }

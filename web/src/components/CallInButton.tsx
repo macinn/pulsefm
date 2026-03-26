@@ -11,7 +11,7 @@ export default function CallInButton() {
   const [rejectedMsg, setRejectedMsg] = useState<string | null>(null);
 
   const isInCall = state.callerStatus === "connecting" || state.callerStatus === "live";
-  const visible = state.isLive && (isInCall || state.callerStatus === "idle");
+  const visible = state.isLive && (isInCall || state.callsOpen);
 
   useEffect(() => {
     if (state.callRejectedReason) {
@@ -21,7 +21,17 @@ export default function CallInButton() {
     }
   }, [state.callRejectedReason]);
 
+  useEffect(() => {
+    if (!state.callsOpen && !isInCall) {
+      setShowSetup(false);
+    }
+  }, [state.callsOpen, isInCall]);
+
   function handleCallStart(name: string) {
+    if (!state.callsOpen) {
+      setShowSetup(false);
+      return;
+    }
     setShowSetup(false);
     service.startCall(name, "audio");
   }
