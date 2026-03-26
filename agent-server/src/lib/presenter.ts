@@ -1,4 +1,4 @@
-import { connectElevenLabs, type ElevenLabsSession, ALARM_CHUNKS_24K } from './elevenlabs-live.js'
+import { connectElevenLabs, type ElevenLabsSession, ALARM_CHUNKS_24K, PHONE_RING_CHUNKS_24K } from './elevenlabs-live.js'
 import { getAgentIds } from './agent-provision.js'
 
 const SYSTEM_INSTRUCTION = `You are Pulse, the host of a 24/7 live AI radio station focused on AI, startups, and technology.
@@ -52,6 +52,7 @@ export interface PresenterSession {
   sendProductionCue(message: string, turnPrompts?: string[]): void
   sendWrapUp(): void
   interruptWithCue(message: string): void
+  interruptWithCallerCue(message: string): void
   queueSoftInterruption(message: string): void
   setCurrentTopic(topic: string | null): void
   getCurrentTopicTurns(): number
@@ -272,6 +273,22 @@ export async function createPresenterSession(
         `URGENT UPDATE: ${message}`,
         'Handle this urgent update now.'
       )
+    },
+    interruptWithCallerCue(message: string) {
+      console.log(`[presenter] CALLER INTERRUPT (turn ${topicTurnCount})`)
+      suppressAudio = true
+      callbacks.onBroadcastAudio('__flush__')
+      let idx = 0
+      const ringTimer = setInterval(() => {
+        if (idx >= PHONE_RING_CHUNKS_24K.length) {
+          clearInterval(ringTimer)
+          suppressAudio = false
+          cueAndTrigger(`INCOMING CALL: ${message}`, 'Welcome the caller now.')
+          return
+        }
+        callbacks.onBroadcastAudio(PHONE_RING_CHUNKS_24K[idx])
+        idx++
+      }, 100)
     },
     queueSoftInterruption(message: string) {
       console.log(`[presenter] soft note received: "${message.slice(0, 80)}..."`)

@@ -453,9 +453,9 @@ export default function AdminPage() {
                   onChange={(e) => setInjectText(e.target.value)}
                   placeholder={
                     injectType === "breaking"
-                      ? "e.g. OpenAI just released GPT-5 with real-time reasoning"
+                      ? "e.g. ElevenLabs just launched a new real-time voice cloning API"
                       : injectType === "co-anchor"
-                        ? "e.g. Nos acaba de llegar una noticia importante sobre Gemini"
+                        ? "e.g. I think there's another angle to this story worth exploring"
                         : "e.g. Send a shoutout to our listeners"
                   }
                   disabled={!canInject}

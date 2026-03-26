@@ -60,6 +60,42 @@ function generateAlarmChunks(sampleRate: number): string[] {
 /** Alarm SFX at 24kHz for broadcasting directly to listeners */
 export const ALARM_CHUNKS_24K = generateAlarmChunks(24000)
 
+// Phone ring SFX — classic double-ring pattern (~2s) for caller connections.
+const RING_CHUNK_DURATION_MS = 100
+const RING_TOTAL_MS = 2000
+
+function generatePhoneRingChunks(sampleRate: number): string[] {
+  const samplesPerChunk = Math.floor(sampleRate * RING_CHUNK_DURATION_MS / 1000)
+  const totalSamples = Math.floor(sampleRate * RING_TOTAL_MS / 1000)
+  const chunks: string[] = []
+  const amplitude = 16000
+
+  for (let offset = 0; offset < totalSamples; offset += samplesPerChunk) {
+    const chunkSamples = Math.min(samplesPerChunk, totalSamples - offset)
+    const buf = Buffer.alloc(chunkSamples * 2)
+    for (let i = 0; i < chunkSamples; i++) {
+      const t = (offset + i) / sampleRate
+      // Double-ring pattern: ring 0-0.4s, silence 0.4-0.6s, ring 0.6-1.0s, silence 1.0-2.0s
+      const tMod = t % 2
+      const isRinging = (tMod < 0.4) || (tMod >= 0.6 && tMod < 1.0)
+      if (!isRinging) {
+        buf.writeInt16LE(0, i * 2)
+        continue
+      }
+      // Classic phone: two mixed frequencies (440Hz + 480Hz) with slight modulation
+      const sig = Math.sin(2 * Math.PI * 440 * t) + Math.sin(2 * Math.PI * 480 * t)
+      const envelope = 1 - 0.15 * Math.sin(2 * Math.PI * 20 * t)
+      const sample = Math.round(amplitude * 0.5 * envelope * sig)
+      buf.writeInt16LE(Math.max(-32768, Math.min(32767, sample)), i * 2)
+    }
+    chunks.push(buf.toString('base64'))
+  }
+  return chunks
+}
+
+/** Phone ring SFX at 24kHz for caller connection broadcast */
+export const PHONE_RING_CHUNKS_24K = generatePhoneRingChunks(24000)
+
 export interface ElevenLabsConnectOptions {
   agentId: string
   overrides?: {

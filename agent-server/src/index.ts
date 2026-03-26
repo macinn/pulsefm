@@ -1217,7 +1217,7 @@ app.get(
             activeLiveCallerName = callerName
             ws.send(JSON.stringify({ type: 'call-accepted', mode: 'live' }))
             pendingInjection = true
-            presenter.interruptWithCue(
+            presenter.interruptWithCallerCue(
               `A listener named "${callerName}" just called in and is now live on air with you! ` +
               `Cut away from your current topic, welcome them warmly, confirm their name, and let them speak. ` +
               `You can hear them through the audio feed. After greeting them, pause and listen carefully instead of continuing your monologue.`
