@@ -14,6 +14,7 @@ RUN npm run build
 FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+ENV TZ=America/Mexico_City
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg python3 make g++ && rm -rf /var/lib/apt/lists/*

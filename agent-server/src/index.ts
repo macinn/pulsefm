@@ -98,6 +98,12 @@ let callsOpen = false
 let callsMode: 'auto' | 'scheduled' | null = null
 let autoCallsCloseTimer: ReturnType<typeof setTimeout> | null = null
 
+// Periodic schedule re-planner (fills gaps with evergreen/music)
+const REPLAN_INTERVAL_MS = 20 * 60_000 // every 20 minutes (while on air)
+const REPLAN_IDLE_INTERVAL_MS = 90 * 60_000 // every 90 minutes (while off air)
+let replanTimer: ReturnType<typeof setInterval> | null = null
+let standbyMusic = false
+
 // Screener session — handles callers when phone lines are closed
 let screener: ScreenerSession | null = null
 let callerWs: WSContext | null = null
@@ -831,6 +837,7 @@ app.get('/radio/status', (c) => {
     transcript: entries,
     guest: guest ? { active: true, ...guest.config } : { active: false },
     activeBlockType: scheduler.getActiveBlockType(),
+    standbyMusic,
     serverTime: Date.now(),
   })
 })
@@ -857,13 +864,61 @@ app.post('/radio/reset', async (c) => {
   return c.json({ status: 'reset' })
 })
 
+function clearReplanTimer() {
+  if (replanTimer) { clearInterval(replanTimer); replanTimer = null }
+}
+
+function startIdleReplan() {
+  clearReplanTimer()
+  // Run once immediately, then every 90 min
+  schedulePlanner.plan('pulse-ai', musicPlayer.listTracks()).catch((err) =>
+    console.error('[replan-idle] schedule planner error:', err),
+  )
+  replanTimer = setInterval(() => {
+    schedulePlanner.plan('pulse-ai', musicPlayer.listTracks()).catch((err) =>
+      console.error('[replan-idle] schedule planner error:', err),
+    )
+  }, REPLAN_IDLE_INTERVAL_MS)
+  console.log('[replan] idle mode — every 90 min')
+}
+
+function startActiveReplan() {
+  clearReplanTimer()
+  replanTimer = setInterval(() => {
+    schedulePlanner.plan('pulse-ai', musicPlayer.listTracks()).catch((err) =>
+      console.error('[replan] schedule planner error:', err),
+    )
+  }, REPLAN_INTERVAL_MS)
+  console.log('[replan] active mode — every 20 min')
+}
+
+function startStandbyMusic() {
+  const tracks = musicPlayer.listTracks()
+  if (tracks.length === 0) { standbyMusic = false; return }
+  // Shuffle tracks for variety
+  const shuffled = [...tracks].sort(() => Math.random() - 0.5)
+  musicPlayer.playPlaylist(shuffled, true)
+  standbyMusic = true
+  console.log(`[standby] looping ${shuffled.length} tracks`)
+}
+
+function stopStandbyMusic() {
+  if (standbyMusic) {
+    musicPlayer.stopTrack()
+    standbyMusic = false
+    console.log('[standby] music stopped')
+  }
+}
+
 // Stop the radio (saves tokens)
 app.post('/radio/stop', async (c) => {
   isOnAir = false
   await scheduler.stop()
   autoPilot.stop()
+  startIdleReplan()
   stopPresenter()
-  broadcast(JSON.stringify({ type: 'status', presenting: false, callsOpen: false, serverTime: Date.now() }))
+  startStandbyMusic()
+  broadcast(JSON.stringify({ type: 'status', presenting: false, callsOpen: false, standbyMusic: true, serverTime: Date.now() }))
   callsOpen = false
   callsMode = null
   clearAutoCallsCloseTimer()
@@ -874,10 +929,15 @@ app.post('/radio/stop', async (c) => {
 // Start the radio
 app.post('/radio/start', async (c) => {
   isOnAir = true
+  stopStandbyMusic()
   scheduler.start()
   autoPilot.start()
+
+  // Switch to active replan mode (every 20 min)
+  startActiveReplan()
+
   pushTranscript('system', 'Radio started by admin — following schedule')
-  broadcast(JSON.stringify({ type: 'status', presenting: true, callsOpen, serverTime: Date.now() }))
+  broadcast(JSON.stringify({ type: 'status', presenting: true, callsOpen, standbyMusic: false, serverTime: Date.now() }))
   return c.json({ status: 'started' })
 })
 
@@ -1233,7 +1293,7 @@ app.get(
       scheduler.notifyListenerConnected()
 
       // Send current status so the UI knows if we're live
-      ws.send(JSON.stringify({ type: 'status', presenting: isOnAir, callsOpen, serverTime: Date.now() }))
+      ws.send(JSON.stringify({ type: 'status', presenting: isOnAir, callsOpen, standbyMusic, serverTime: Date.now() }))
 
       // Send transcript history so late joiners see what happened
       if (transcriptLog.length > 0) {
@@ -1307,6 +1367,12 @@ provisionAgents()
     const server = serve({ fetch: app.fetch, port }, () => {
       console.log(`Pulse agent-server running on http://localhost:${port}`)
       musicScheduler.startDaily()
+
+      // Start idle replan timer so there's a schedule ready when the radio turns on
+      startIdleReplan()
+
+      // Start standby music loop
+      startStandbyMusic()
     })
     injectWebSocket(server)
   })

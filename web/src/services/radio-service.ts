@@ -232,7 +232,7 @@ export class WebSocketRadioService implements RadioService {
         const msg = JSON.parse(evt.data);
         if (msg.type === "status") {
           this.update({ isLive: msg.presenting, callsOpen: msg.callsOpen ?? false });
-          if (!msg.presenting && this.state.isPlaying) {
+          if (!msg.presenting && !msg.standbyMusic && this.state.isPlaying) {
             this.teardownAudio();
             this.update({ isPlaying: false, isBuffering: false, callsOpen: false });
           }

@@ -68,6 +68,7 @@ export default function RadioHeader() {
           <div className="w-px h-5 bg-white/6" />
           <Link
             href="/admin"
+            target="_blank"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border font-heading text-[10px] font-bold tracking-[0.12em] uppercase transition-all duration-200 hover:scale-105"
             style={{
               borderColor: station.color + "40",

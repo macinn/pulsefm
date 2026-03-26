@@ -7,6 +7,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3001
+      - TZ=America/Mexico_City
     volumes:
       - backend-data:/app/data
       - backend-media:/app/media
