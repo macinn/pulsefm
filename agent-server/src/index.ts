@@ -815,6 +815,21 @@ app.get('/radio/locks', (c) => {
   return c.json(opLocks.getAll())
 })
 
+// Reset all data (schedules, news, memory, locks)
+app.post('/radio/reset', async (c) => {
+  if (isOnAir) return c.json({ error: 'Stop the radio before resetting' }, 409)
+  db.exec(`
+    DELETE FROM schedules;
+    DELETE FROM candidates;
+    DELETE FROM briefs;
+    DELETE FROM embeddings;
+    DELETE FROM daily_memory;
+    DELETE FROM op_locks;
+  `)
+  await seedDefaultStation()
+  return c.json({ status: 'reset' })
+})
+
 // Stop the radio (saves tokens)
 app.post('/radio/stop', async (c) => {
   isOnAir = false

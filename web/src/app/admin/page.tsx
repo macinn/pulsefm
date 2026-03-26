@@ -28,6 +28,7 @@ import {
   Clock,
   Pause,
   CalendarPlus,
+  Trash2,
 } from "lucide-react";
 import {
   useTranscriptStream,
@@ -79,6 +80,8 @@ export default function AdminPage() {
   const [scheduleRefreshKey, setScheduleRefreshKey] = useState(0);
   const [batchGenerating, setBatchGenerating] = useState(false);
   const [opLocks, setOpLocks] = useState<Record<string, boolean>>({});
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const transcriptRef = useRef<HTMLDivElement>(null);
 
   const { entries, streaming, connected } = useTranscriptStream(
@@ -382,6 +385,14 @@ export default function AdminPage() {
               className="p-2 rounded-full glass hover:bg-white/5 transition-colors"
             >
               <RefreshCw className={`w-3.5 h-3.5 text-text-muted ${loading ? "animate-spin" : ""}`} />
+            </button>
+            <button
+              onClick={() => setShowResetConfirm(true)}
+              disabled={isPresenting || resetting}
+              className="p-2 rounded-full glass hover:bg-on-air/10 text-text-dim hover:text-on-air transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Reset all data"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
@@ -888,6 +899,55 @@ export default function AdminPage() {
             }
           }}
         />
+      )}
+
+      {/* Reset Confirmation Modal */}
+      {showResetConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-base/70 backdrop-blur-sm" onClick={() => !resetting && setShowResetConfirm(false)} />
+          <div className="relative z-10 w-full max-w-sm glass-strong rounded-2xl p-6 animate-fade-in-up">
+            <div className="text-center mb-5">
+              <div className="w-12 h-12 rounded-full bg-on-air/10 flex items-center justify-center mx-auto mb-3">
+                <Trash2 className="w-5 h-5 text-on-air" />
+              </div>
+              <h3 className="font-heading text-lg font-bold tracking-tight">Reset all data?</h3>
+              <p className="font-body text-sm text-text-muted mt-2">
+                This will delete all schedules, news briefs, candidates, embeddings, daily memory and operation locks. Music library will be preserved. This action cannot be undone.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowResetConfirm(false)}
+                disabled={resetting}
+                className="flex-1 px-4 py-2.5 rounded-xl glass text-text-muted font-heading text-xs font-bold tracking-wider uppercase hover:bg-white/5 transition-all disabled:opacity-30"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  setResetting(true);
+                  try {
+                    const res = await fetch(`${getApiUrl()}/radio/reset`, { method: "POST" });
+                    if (res.ok) {
+                      setScheduleRefreshKey((k) => k + 1);
+                      await fetchStatus();
+                    }
+                  } catch (err) {
+                    console.error("[admin] reset failed:", err);
+                  } finally {
+                    setResetting(false);
+                    setShowResetConfirm(false);
+                  }
+                }}
+                disabled={resetting}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-on-air text-white font-heading text-xs font-bold tracking-wider uppercase hover:brightness-110 transition-all disabled:opacity-60"
+              >
+                {resetting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                {resetting ? "Resetting..." : "Reset"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
