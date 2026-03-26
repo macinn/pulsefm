@@ -1,9 +1,10 @@
 "use client";
 
 import { useRadio } from "./RadioProvider";
-import { Radio } from "lucide-react";
+import { Radio, Settings } from "lucide-react";
 import { VolumeControl } from "./RadioPlayer";
 import CallInButton from "./CallInButton";
+import Link from "next/link";
 
 export default function RadioHeader() {
   const { state } = useRadio();
@@ -64,6 +65,19 @@ export default function RadioHeader() {
           <VolumeControl />
           <div className="w-px h-5 bg-white/6" />
           <CallInButton />
+          <div className="w-px h-5 bg-white/6" />
+          <Link
+            href="/admin"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border font-heading text-[10px] font-bold tracking-[0.12em] uppercase transition-all duration-200 hover:scale-105"
+            style={{
+              borderColor: station.color + "40",
+              color: station.color,
+              backgroundColor: station.color + "10",
+            }}
+          >
+            <Settings className="w-3.5 h-3.5" />
+            Studio
+          </Link>
         </div>
       </div>
     </header>

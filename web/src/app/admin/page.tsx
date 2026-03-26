@@ -82,6 +82,7 @@ export default function AdminPage() {
   const [opLocks, setOpLocks] = useState<Record<string, boolean>>({});
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [clockOffset, setClockOffset] = useState(0);
   const transcriptRef = useRef<HTMLDivElement>(null);
 
   const { entries, streaming, connected } = useTranscriptStream(
@@ -91,14 +92,20 @@ export default function AdminPage() {
       if (msg.type === "schedule-update") {
         setScheduleRefreshKey((k) => k + 1);
       }
+      if (typeof msg.serverTime === "number") {
+        setClockOffset(msg.serverTime as number - Date.now());
+      }
     }, []),
   );
 
   const fetchStatus = useCallback(async () => {
     try {
       const res = await fetch(`${getApiUrl()}/radio/status`);
-      const { presenting, listeners, activeBlockType } = await res.json();
+      const { presenting, listeners, activeBlockType, serverTime } = await res.json();
       setStatus({ presenting, listeners, activeBlockType });
+      if (typeof serverTime === "number") {
+        setClockOffset(serverTime - Date.now());
+      }
     } catch {
       setStatus(null);
     }
@@ -877,6 +884,7 @@ export default function AdminPage() {
           refreshKey={scheduleRefreshKey}
           isPresenting={isPresenting}
           lockedOps={opLocks}
+          clockOffset={clockOffset}
         />
       </div>
 
@@ -1058,10 +1066,11 @@ function TranscriptLine({ entry }: { entry: TranscriptEntry }) {
   const isPulse = entry.role === "pulse";
   const isGuest = entry.role === "guest";
   const isProducer = entry.role === "producer";
+  const isCohost = entry.role === "cohost";
 
   return (
     <div className={`flex items-start gap-2.5 text-sm py-1.5 px-2 rounded-lg transition-colors hover:bg-white/2 ${
-      isPulse ? "text-text" : isGuest ? "text-violet-300" : isProducer ? "text-amber-300" : "text-blue-300"
+      isPulse ? "text-text" : isGuest ? "text-violet-300" : isProducer ? "text-amber-300" : isCohost ? "text-emerald-300" : "text-blue-300"
     }`}>
       <RoleAvatar role={entry.role} />
       <div className="min-w-0">
@@ -1074,12 +1083,12 @@ function TranscriptLine({ entry }: { entry: TranscriptEntry }) {
   );
 }
 
-function StreamingLine({ role, text, ts }: { role: "pulse" | "caller" | "guest" | "producer"; text: string; ts: number }) {
+function StreamingLine({ role, text, ts }: { role: "pulse" | "caller" | "guest" | "cohost" | "producer"; text: string; ts: number }) {
   const time = new Date(ts).toLocaleTimeString();
 
   return (
     <div className={`flex items-start gap-2.5 text-sm py-1.5 px-2 rounded-lg ${
-      role === "pulse" ? "text-text" : role === "guest" ? "text-violet-300" : role === "producer" ? "text-amber-300" : "text-blue-300"
+      role === "pulse" ? "text-text" : role === "guest" ? "text-violet-300" : role === "producer" ? "text-amber-300" : role === "cohost" ? "text-emerald-300" : "text-blue-300"
     }`}>
       <RoleAvatar role={role} />
       <div className="min-w-0">
@@ -1093,11 +1102,18 @@ function StreamingLine({ role, text, ts }: { role: "pulse" | "caller" | "guest" 
   );
 }
 
-function RoleAvatar({ role }: { role: "pulse" | "caller" | "guest" | "producer" }) {
+function RoleAvatar({ role }: { role: "pulse" | "caller" | "guest" | "cohost" | "producer" }) {
   if (role === "guest") {
     return (
       <div className="mt-0.5 shrink-0 w-6 h-6 rounded-full flex items-center justify-center bg-violet-500/15 text-violet-400 border border-violet-500/20">
         <UserPlus className="w-3 h-3" />
+      </div>
+    );
+  }
+  if (role === "cohost") {
+    return (
+      <div className="mt-0.5 shrink-0 w-6 h-6 rounded-full flex items-center justify-center bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
+        <Mic className="w-3 h-3" />
       </div>
     );
   }

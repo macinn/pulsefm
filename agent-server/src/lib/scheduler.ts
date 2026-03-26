@@ -27,6 +27,8 @@ export interface SchedulerDeps {
   onWrapUp?(): void
   /** Topic/guest finished early — fill remaining time with music */
   onBlockFinishedEarly?(remainingMs: number): void
+  /** Number of connected listeners (for token saving) */
+  getListenerCount?(): number
 }
 
 function todayDate(): string {
@@ -62,6 +64,7 @@ export class Scheduler {
   private activeBlockType: string | null = null
   private wrapUpTimer: ReturnType<typeof setTimeout> | null = null
   private wrapUpFired = false
+  private waitingForListeners = false
 
   constructor(deps: SchedulerDeps) {
     this.deps = deps
@@ -133,6 +136,20 @@ export class Scheduler {
     )
   }
 
+  /** Whether the scheduler is paused waiting for listeners to connect */
+  isWaitingForListeners(): boolean {
+    return this.waitingForListeners
+  }
+
+  /** Notify that a listener connected — resume if waiting */
+  notifyListenerConnected(): void {
+    if (this.waitingForListeners) {
+      console.log('[scheduler] listener connected — resuming')
+      this.waitingForListeners = false
+      this.tick()
+    }
+  }
+
   /** Force-execute a specific block now, regardless of its startTime */
   async executeBlock(date: string, blockId: string) {
     const schedule = await this.deps.store.getSchedule(date)
@@ -161,15 +178,45 @@ export class Scheduler {
       }
     }
 
-    // Find the next pending block whose time has arrived
+    // Find the next pending block whose time has arrived (and hasn't fully elapsed)
     if (!this.activeBlockId) {
       const pending = schedule.blocks
-        .filter((b) => b.status === 'pending' && b.startTime <= now)
+        .filter((b) => {
+          if (b.status !== 'pending') return false
+          if (b.startTime > now) return false
+          // Skip blocks whose end time has already passed
+          const endTime = addMinutes(b.startTime, b.durationMinutes)
+          return endTime > now
+        })
         .sort((a, b) => a.startTime.localeCompare(b.startTime))
+
+      // Also mark fully-elapsed pending blocks as skipped
+      const expired = schedule.blocks.filter((b) => {
+        if (b.status !== 'pending') return false
+        if (b.startTime > now) return false
+        const endTime = addMinutes(b.startTime, b.durationMinutes)
+        return endTime <= now
+      })
+      for (const skipped of expired) {
+        await this.deps.store.updateBlock(date, skipped.id, { status: 'skipped' })
+        this.broadcastBlockUpdate(skipped.id, { ...skipped, status: 'skipped' })
+        console.log(`[scheduler] skipped expired block: ${skipped.title} (ended ${addMinutes(skipped.startTime, skipped.durationMinutes)})`)
+      }
 
       if (pending.length > 0) {
         // Execute the first ready block; skip any that are past their window
         const block = pending[pending.length - 1] // Most recent pending
+
+        // AI blocks (topic, guest, calls, break) need listeners to save tokens
+        const needsAI = block.type === 'topic' || block.type === 'guest' || block.type === 'calls' || block.type === 'break'
+        const listeners = this.deps.getListenerCount?.() ?? 1
+        if (needsAI && listeners === 0) {
+          this.waitingForListeners = true
+          console.log(`[scheduler] no listeners — pausing AI block "${block.title}" until someone connects`)
+          return
+        }
+        this.waitingForListeners = false
+
         // Skip blocks that came before the chosen one
         for (const skipped of pending.slice(0, -1)) {
           await this.deps.store.updateBlock(date, skipped.id, { status: 'skipped' })

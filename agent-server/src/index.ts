@@ -831,6 +831,7 @@ app.get('/radio/status', (c) => {
     transcript: entries,
     guest: guest ? { active: true, ...guest.config } : { active: false },
     activeBlockType: scheduler.getActiveBlockType(),
+    serverTime: Date.now(),
   })
 })
 
@@ -862,7 +863,7 @@ app.post('/radio/stop', async (c) => {
   await scheduler.stop()
   autoPilot.stop()
   stopPresenter()
-  broadcast(JSON.stringify({ type: 'status', presenting: false, callsOpen: false }))
+  broadcast(JSON.stringify({ type: 'status', presenting: false, callsOpen: false, serverTime: Date.now() }))
   callsOpen = false
   callsMode = null
   clearAutoCallsCloseTimer()
@@ -876,7 +877,7 @@ app.post('/radio/start', async (c) => {
   scheduler.start()
   autoPilot.start()
   pushTranscript('system', 'Radio started by admin — following schedule')
-  broadcast(JSON.stringify({ type: 'status', presenting: true, callsOpen }))
+  broadcast(JSON.stringify({ type: 'status', presenting: true, callsOpen, serverTime: Date.now() }))
   return c.json({ status: 'started' })
 })
 
@@ -1146,16 +1147,10 @@ const scheduler = new Scheduler({
     }
     lastTopicDescription = config.description.slice(0, 200)
 
-    // Prepend daily memory context so the presenter knows the show arc
-    dailyMemory.buildContext().then((ctx) => {
-      const fullCue = ctx
-        ? `${ctx}\n\n=== NEW TOPIC ===\n${config.description}`
-        : config.description
-      presenter!.sendProductionCue(fullCue, config.turnPrompts)
-    }).catch(() => {
-      presenter!.sendProductionCue(config.description, config.turnPrompts)
-    })
+    // Send production cue immediately (don't wait for memory context)
+    presenter.sendProductionCue(config.description, config.turnPrompts)
 
+    // Asynchronously log to daily memory
     dailyMemory.addEntry(`Topic started: ${config.description.slice(0, 100)}`).catch(() => {})
     pushTranscript('system', `[schedule] Topic: ${config.description}`)
     // Broadcast images to listeners if available
@@ -1220,6 +1215,9 @@ const scheduler = new Scheduler({
     musicPlayer.playTrack(pick)
     pushTranscript('system', `[schedule] Fill music: ${pick} (${Math.round(remainingMs / 1000)}s remaining)`)
   },
+  getListenerCount() {
+    return radioClients.size
+  },
   broadcast,
 })
 
@@ -1231,8 +1229,11 @@ app.get(
       radioClients.add(ws)
       console.log(`[ws] listener connected (total: ${radioClients.size})`)
 
+      // Resume scheduler if it was paused waiting for listeners
+      scheduler.notifyListenerConnected()
+
       // Send current status so the UI knows if we're live
-      ws.send(JSON.stringify({ type: 'status', presenting: isOnAir, callsOpen }))
+      ws.send(JSON.stringify({ type: 'status', presenting: isOnAir, callsOpen, serverTime: Date.now() }))
 
       // Send transcript history so late joiners see what happened
       if (transcriptLog.length > 0) {

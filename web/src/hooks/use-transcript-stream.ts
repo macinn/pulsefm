@@ -4,12 +4,12 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 
 export interface TranscriptEntry {
   ts: number;
-  role: "pulse" | "caller" | "guest" | "producer" | "system";
+  role: "pulse" | "caller" | "guest" | "cohost" | "producer" | "system";
   text: string;
 }
 
 interface StreamingTurn {
-  role: "pulse" | "caller" | "guest" | "producer";
+  role: "pulse" | "caller" | "guest" | "cohost" | "producer";
   text: string;
   startTs: number;
 }
@@ -84,12 +84,14 @@ export function useTranscriptStream(
         switch (msg.type) {
           case "transcript": {
             const chunk: string = msg.text;
-            const role: "pulse" | "guest" | "producer" =
+            const role: "pulse" | "guest" | "cohost" | "producer" =
               msg.role === "guest"
                 ? "guest"
-                : msg.role === "producer"
-                  ? "producer"
-                  : "pulse";
+                : msg.role === "cohost"
+                  ? "cohost"
+                  : msg.role === "producer"
+                    ? "producer"
+                    : "pulse";
             if (!streamingRef.current || streamingRef.current.role !== role) {
               // Flush previous streaming turn if role changed
               if (streamingRef.current?.text.trim()) {

@@ -95,8 +95,8 @@ const STATUS_OPACITY: Record<BlockStatus, number> = {
   skipped: 0.2,
 };
 
-function todayDate(): string {
-  return new Date().toISOString().slice(0, 10);
+function todayDate(offsetMs = 0): string {
+  return new Date(Date.now() + offsetMs).toISOString().slice(0, 10);
 }
 
 function formatDate(d: string): string {
@@ -113,8 +113,8 @@ function shiftDate(d: string, days: number): string {
   return dt.toISOString().slice(0, 10);
 }
 
-function getCurrentMinutesFrac(): number {
-  const d = new Date();
+function getCurrentMinutesFrac(offsetMs = 0): number {
+  const d = new Date(Date.now() + offsetMs);
   return d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
 }
 
@@ -144,6 +144,7 @@ interface ScheduleTimelineProps {
   refreshKey?: number;
   isPresenting: boolean;
   lockedOps?: Record<string, boolean>;
+  clockOffset?: number;
 }
 
 export default function ScheduleTimeline({
@@ -152,8 +153,9 @@ export default function ScheduleTimeline({
   refreshKey,
   isPresenting,
   lockedOps,
+  clockOffset = 0,
 }: ScheduleTimelineProps) {
-  const [date, setDate] = useState(todayDate);
+  const [date, setDate] = useState(() => todayDate(clockOffset));
   const [schedule, setSchedule] = useState<DaySchedule | null>(null);
   const [loading, setLoading] = useState(false);
   const [pxPerMin, setPxPerMin] = useState(DEFAULT_PX_PER_MIN);
@@ -180,7 +182,7 @@ export default function ScheduleTimeline({
     toastTimer.current = setTimeout(() => setToast(null), 4000);
   }
 
-  const isToday = date === todayDate();
+  const isToday = date === todayDate(clockOffset);
   const totalWidth = TOTAL_MINUTES * pxPerMin;
 
   // Fetch schedule
@@ -208,10 +210,10 @@ export default function ScheduleTimeline({
 
   // Smooth playhead: update every second (set initial value on mount to avoid hydration mismatch)
   useEffect(() => {
-    setNowMin(getCurrentMinutesFrac());
-    const i = setInterval(() => setNowMin(getCurrentMinutesFrac()), 1000);
+    setNowMin(getCurrentMinutesFrac(clockOffset));
+    const i = setInterval(() => setNowMin(getCurrentMinutesFrac(clockOffset)), 1000);
     return () => clearInterval(i);
-  }, []);
+  }, [clockOffset]);
 
   const blocks = useMemo(
     () =>
@@ -318,7 +320,7 @@ export default function ScheduleTimeline({
       if (!scrollRef.current) return;
       const dx = e.clientX - m.mouseX;
       if (Math.abs(dx) > 4) m.moved = true;
-      const minLeft = isToday ? Math.ceil(getCurrentMinutesFrac()) * pxPerMin : 0;
+      const minLeft = isToday ? Math.ceil(getCurrentMinutesFrac(clockOffset)) * pxPerMin : 0;
       const newLeft = Math.max(minLeft, Math.min(totalWidth - 28, m.blockLeft + dx));
       dragLeftRef.current = newLeft;
       setDragLeft(newLeft);
@@ -335,7 +337,7 @@ export default function ScheduleTimeline({
       const m = dragMeta.current;
       if (m.moved) {
         const finalLeft = dragLeftRef.current;
-        const minMin = isToday ? Math.ceil(getCurrentMinutesFrac()) : 0;
+        const minMin = isToday ? Math.ceil(getCurrentMinutesFrac(clockOffset)) : 0;
         const newMin = Math.max(minMin, snapTo5Min(finalLeft / pxPerMin));
         const newTime = minToTime(newMin);
         scheduleService

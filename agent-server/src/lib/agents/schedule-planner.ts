@@ -41,7 +41,7 @@ Given a list of news briefs (some are news stories, some are evergreen/feature t
 7. For topic blocks, use the brief's report.broadcastSummary as the description if available, otherwise use the summary. Include report.turnPrompts if available.
 8. For guest blocks, invent a plausible expert (not a real public figure) — a researcher, founder, analyst, etc.
 9. Pick guest voices from this list: Sarah, Jessica, Lily, Roger, Eric, George. Vary them.
-10. You should plan for the entire time window provided. Keep the radio busy.
+10. You should plan for the entire time window provided. Keep the radio busy. Pack blocks TIGHTLY — the next block starts exactly when the previous one ends. There should be ZERO dead air or unscheduled gaps.
 11. Schedule ALL the briefs provided — they have already been pre-selected to fit the window. Do not skip any unless the show history indicates it was already covered.
 12. You will receive a SHOW HISTORY with what was covered in the last 2 days. Do NOT repeat topics that were already covered UNLESS the brief explicitly contains new developments or updates. If a story has updates, frame the block title to reflect the update (e.g. "UPDATE: ...", "New details on ...").
 13. Use the show history to maintain narrative continuity — reference back to earlier coverage when relevant.
@@ -277,8 +277,8 @@ export class SchedulePlanner {
       const bEnd = toMinutes(b.startTime) + b.durationMinutes
       if (bEnd > windowStart) windowStart = bEnd
     }
-    // Round up to next 5-minute boundary
-    windowStart = Math.ceil(windowStart / 5) * 5
+    // Round up to next minute boundary (no 5-min rounding — fill ASAP)
+    windowStart = Math.ceil(windowStart)
     const windowEnd = Math.min(windowStart + windowHours * 60, 24 * 60)
 
     // Preserve pending blocks that fall OUTSIDE the planning window
@@ -289,14 +289,23 @@ export class SchedulePlanner {
       return bStart >= windowEnd || (bStart + b.durationMinutes) <= windowStart
     })
 
-    if (windowEnd - windowStart < 15) {
+    if (windowEnd - windowStart < 10) {
       console.log('[schedule-planner] not enough time in window, skipping')
       return []
     }
 
-    // Calculate how many content slots fit in the window (capped)
-    const windowMinutes = windowEnd - windowStart
-    const maxSlots = Math.min(MAX_SLOTS_PER_WINDOW, Math.floor(windowMinutes / AVG_SLOT_MINUTES))
+    // Compute available gaps within the window (accounting for preserved blocks)
+    const fixedBlocks = [...preserved.filter(b => b.status !== 'skipped'), ...pendingOutsideWindow]
+    const gaps = computeGaps(fixedBlocks, windowStart, windowEnd)
+    const totalAvailableMinutes = gaps.reduce((sum, g) => sum + g.minutes, 0)
+
+    if (totalAvailableMinutes < 10) {
+      console.log(`[schedule-planner] only ${totalAvailableMinutes} minutes available, skipping`)
+      return []
+    }
+
+    // Calculate how many content slots fit in the available time (capped)
+    const maxSlots = Math.min(MAX_SLOTS_PER_WINDOW, Math.floor(totalAvailableMinutes / AVG_SLOT_MINUTES))
 
     // Get pending briefs — only take what fits, sorted by priority
     const allBriefs = await this.deps.newsStore.getBriefs(stationId, { pendingOnly: true })
@@ -354,7 +363,14 @@ export class SchedulePlanner {
       ? `\n\n=== SHOW HISTORY (last 2 days — avoid repeating these topics) ===\n${showHistory}`
       : ''
 
+    const gapsDescription = gaps.map(g => `- ${g.start} to ${g.end} (${g.minutes} minutes)`).join('\n')
+
     const userPrompt = `Plan the schedule for time window ${startTimeStr} to ${endTimeStr}.${historySection}
+
+AVAILABLE TIME SLOTS (fill these completely, no dead air):
+${gapsDescription}
+
+Total available: ${totalAvailableMinutes} minutes.
 
 News briefs to schedule:
 ${briefsSummary}
@@ -363,7 +379,7 @@ ${tracksList}
 
 Available guest voices: ${GUEST_VOICES.join(', ')}
 
-Generate the blocks array. Start the first block at ${startTimeStr}. All blocks must fit within the window.`
+Generate the blocks array. Start the first block at ${gaps[0]?.start ?? startTimeStr}. Pack blocks tightly — each block starts EXACTLY when the previous one ends. Fill ALL available time.`
 
     const response = await this.ai.models.generateContent({
       model: 'gemini-3.1-pro-preview',
@@ -404,9 +420,9 @@ Generate the blocks array. Start the first block at ${startTimeStr}. All blocks 
         config: buildConfig(p, allSchedulableBriefs),
       }
 
-      // Check overlap against preserved + outside-window pending + already-added new blocks
-      const allBlocks = [...preserved, ...pendingOutsideWindow, ...newBlocks]
-      if (hasOverlap(allBlocks, block)) continue
+      // Check overlap against preserved (excluding skipped) + outside-window pending + already-added new blocks
+      const overlapCheck = [...preserved.filter(b => b.status !== 'skipped'), ...pendingOutsideWindow, ...newBlocks]
+      if (hasOverlap(overlapCheck, block)) continue
 
       newBlocks.push(block)
 
@@ -416,6 +432,34 @@ Generate the blocks array. Start the first block at ${startTimeStr}. All blocks 
     if (newBlocks.length === 0) {
       console.warn('[schedule-planner] no valid blocks after validation')
       return []
+    }
+
+    // Pack blocks contiguously into available gaps (eliminate dead air)
+    newBlocks.sort((a, b) => a.startTime.localeCompare(b.startTime))
+    let blockIdx = 0
+    for (const gap of gaps) {
+      let cursor = toMinutes(gap.start)
+      const gapEnd = toMinutes(gap.end)
+
+      while (blockIdx < newBlocks.length && cursor + newBlocks[blockIdx].durationMinutes <= gapEnd) {
+        newBlocks[blockIdx].startTime = minutesToTime(cursor)
+        cursor += newBlocks[blockIdx].durationMinutes
+        blockIdx++
+      }
+
+      // Fill remaining gap with music
+      const remaining = gapEnd - cursor
+      if (remaining >= 3 && availableTracks.length > 0) {
+        newBlocks.push({
+          id: randomBytes(8).toString('hex'),
+          type: 'music',
+          title: 'Music',
+          startTime: minutesToTime(cursor),
+          durationMinutes: remaining,
+          status: 'pending',
+          config: { playlist: availableTracks.slice(0, 3), label: 'Transition', loop: true },
+        })
+      }
     }
 
     // Keep preserved + outside-window pending + new AI-generated blocks
@@ -455,6 +499,43 @@ function minutesToTime(minutes: number): string {
 function validateBlockType(type: string): ScheduleBlock['type'] | null {
   const valid = ['topic', 'guest', 'music', 'calls']
   return valid.includes(type) ? type as ScheduleBlock['type'] : null
+}
+
+function computeGaps(blocks: ScheduleBlock[], windowStartMin: number, windowEndMin: number): Array<{ start: string; end: string; minutes: number }> {
+  const sorted = blocks
+    .filter((b) => {
+      const bStart = toMinutes(b.startTime)
+      const bEnd = bStart + b.durationMinutes
+      return bEnd > windowStartMin && bStart < windowEndMin
+    })
+    .sort((a, b) => a.startTime.localeCompare(b.startTime))
+
+  const gaps: Array<{ start: string; end: string; minutes: number }> = []
+  let cursor = windowStartMin
+
+  for (const block of sorted) {
+    const bStart = toMinutes(block.startTime)
+    const bEnd = bStart + block.durationMinutes
+
+    if (bStart > cursor) {
+      gaps.push({
+        start: minutesToTime(cursor),
+        end: minutesToTime(bStart),
+        minutes: bStart - cursor,
+      })
+    }
+    cursor = Math.max(cursor, bEnd)
+  }
+
+  if (cursor < windowEndMin) {
+    gaps.push({
+      start: minutesToTime(cursor),
+      end: minutesToTime(windowEndMin),
+      minutes: windowEndMin - cursor,
+    })
+  }
+
+  return gaps
 }
 
 function hasOverlap(blocks: ScheduleBlock[], newBlock: ScheduleBlock): boolean {
