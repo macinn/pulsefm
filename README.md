@@ -131,22 +131,25 @@ The frontend is a full-screen dark-theme radio player with:
                           │  ├─ Auto-Pilot               │
                           │  ├─ Schedule Planner         │
                           │  ├─ Scheduler (15s loop)     │
-                          │  └─ Daily Memory (.md logs)  │
+                          │  └─ Daily Memory             │
                           │                              │
                           │  Media                       │
                           │  ├─ Music Player (WAV)       │
                           │  └─ Music Generator (11Labs) │
                           │                              │
+                          │  Persistence                 │
+                          │  ├─ SQLite (WAL mode)        │
+                          │  └─ Operation Locks          │
+                          │                              │
                           └──────────┬──────────────────┘
                                      │
                     ┌────────────────┼────────────────┐
                     │                │                │
-              Google APIs      External APIs    File Storage
-              ├─ Gemini Pro    ├─ RSS Feeds     ├─ schedules/
-              ├─ Gemini Flash  ├─ Reddit JSON   ├─ news/
-              ├─ Embeddings    ├─ Firecrawl     ├─ stations/
-              ├─ Google Search ├─ ElevenLabs    └─ media/
-              │                │
+              Google APIs      External APIs    Local Storage
+              ├─ Gemini Pro    ├─ RSS Feeds     ├─ data/pulse.db
+              ├─ Gemini Flash  ├─ Reddit JSON   └─ media/*.wav
+              ├─ Embeddings    ├─ Firecrawl
+              ├─ Google Search ├─ ElevenLabs
 ```
 
 ### How It All Connects
@@ -204,7 +207,7 @@ Three components keep the station running autonomously:
 - **Scheduler** — a tight 15-second execution loop that walks the timeline, starts each block when its time arrives, and advances the playhead. It coordinates with the presenter, music player, and guest/co-host sessions. It also sets a **wrap-up timer** for topic and guest blocks: 30 seconds before the block ends, it sends a private cue to the presenter so Pulse can close the segment naturally. If content finishes early (co-host wraps, guest leaves, turn prompts exhausted), the scheduler calculates remaining time and plays a **random fill music track** from the library until the next block starts.
 - **Music Scheduler** — generates 10 fresh tracks every 72 hours at 3 AM using ElevenLabs Music API, cycling through 20 radio styles (ambient, lo-fi, jazz, synthwave, etc.). Runs sequentially with a 5-second cooldown between tracks. Can also be triggered manually via the admin panel.
 
-A **Daily Memory** module writes a Markdown log of each day's show: topics covered, caller interactions, music played, and key moments. This file is loaded into the presenter's context the next day for editorial continuity.
+A **Daily Memory** module logs each day's show in the SQLite database: topics covered, caller interactions, music played, and key moments. This is loaded into the presenter's context the next day for editorial continuity.
 
 #### Agent Server — Media
 
@@ -244,17 +247,24 @@ A **Daily Memory** module writes a Markdown log of each day's show: topics cover
 | Reddit | Public JSON API | Reddit Scout |
 | Google Search | Gemini grounding tool | Trending Scout, Research Agent |
 
-#### File-Based Persistence
+#### SQLite Persistence
 
-All runtime state is stored as JSON files under `agent-server/data/` (gitignored):
+All runtime state is stored in a single SQLite database at `agent-server/data/pulse.db` (WAL mode for concurrent reads, gitignored):
 
-| Directory | Contents |
-|-----------|----------|
-| `schedules/` | One file per day (`YYYY-MM-DD.json`) containing the block timeline |
-| `news/` | Editorial briefs, raw candidates, and embedding vectors |
-| `stations/` | Station configuration (name, sources, topics, voices) |
-| `media/` | Generated and uploaded WAV tracks |
-| `memory/` | Daily Markdown show logs for editorial continuity |
+| Table | Contents |
+|-------|----------|
+| `schedules` | One row per day (date PK, blocks as JSON) |
+| `candidates` | Raw news candidates per station |
+| `briefs` | Editorial briefs per station |
+| `embeddings` | Embedding vectors for deduplication |
+| `stations` | Station configuration |
+| `daily_memory` | Show logs for editorial continuity |
+| `music_library` | Generated track metadata |
+| `op_locks` | Persistent operation locks (scan, process, auto-generate, music-batch) |
+
+Generated WAV tracks are stored as files under `agent-server/media/`.
+
+**Operation Locks** prevent concurrent execution of long-running operations. Locks are persisted in SQLite, surviving page reloads and server restarts (with automatic cleanup of stale locks >10 minutes). The frontend polls `GET /radio/locks` every 2 seconds and disables buttons accordingly.
 
 ---
 
@@ -314,8 +324,8 @@ All live sessions use ElevenLabs Conversational AI agents, auto-provisioned at s
 - **ElevenLabs** Conversational AI (WebSocket) + Music API for voice agents and music generation
 - **@google/genai** SDK for Gemini text LLM tasks (editorial reasoning, enrichment, embeddings)
 - **rss-parser** for RSS feed ingestion
+- **better-sqlite3** for persistence (WAL mode, single file at `data/pulse.db`)
 - **TypeScript** throughout
-- **File-based JSON persistence** (schedules, briefs, stations, embeddings)
 
 ### Firecrawl
 | API | Purpose |
@@ -351,8 +361,8 @@ All live sessions use ElevenLabs Conversational AI agents, auto-provisioned at s
 ### Installation
 
 ```bash
-git clone https://github.com/Abel1011/pulse-ai.git
-cd pulse-ai
+git clone https://github.com/Abel1011/pulsefm.git
+cd pulsefm
 
 # Backend
 cd agent-server
@@ -444,6 +454,7 @@ npm run dev
 | GET | `/radio/status` | Returns `{ presenting, listeners, transcript, guest, activeBlockType }` |
 | POST | `/radio/inject` | Inject content: `{ type: 'breaking'\|'soft'\|'co-anchor', text, imageUrl?, turnPrompts? }` |
 | POST | `/radio/inject-news` | Smart inject: direct if topic active, auto-creates block if idle |
+| GET | `/radio/locks` | Returns `{ scan, process, 'auto-generate', 'music-batch' }` — current operation lock states |
 
 ### Guest Segments
 
@@ -571,7 +582,7 @@ docker compose up --build
 - Backend: http://localhost:3001
 - Admin panel: http://localhost:3000/admin
 
-Data (schedules, briefs, embeddings) and media (generated WAV tracks) are persisted in named Docker volumes.
+The SQLite database (`data/pulse.db`) and media (generated WAV tracks) are persisted in named Docker volumes.
 
 ### Individual Dockerfiles
 
@@ -596,7 +607,7 @@ The frontend reads `NEXT_PUBLIC_API_URL` at runtime (injected via server-side re
 ## Project Structure
 
 ```
-pulse-ai/
+pulsefm/
 ├── agent-server/                    # Backend
 │   ├── src/
 │   │   ├── index.ts                 # Entry point, routes, WebSocket, orchestration
@@ -612,11 +623,13 @@ pulse-ai/
 │   │   │   ├── music-player.ts      # WAV streaming + fill music
 │   │   │   ├── music-generator.ts   # ElevenLabs Music API generation
 │   │   │   ├── music-scheduler.ts   # 72-hour batch generation (10 tracks, 20 styles)
-│   │   │   ├── daily-memory.ts      # Show history (.md logs)
+│   │   │   ├── db.ts                # SQLite database singleton (WAL mode)
+│   │   │   ├── op-locks.ts          # Persistent operation locks
+│   │   │   ├── daily-memory.ts      # Show history (SQLite)
 │   │   │   ├── news-dedup.ts        # Embedding-based deduplication
-│   │   │   ├── news-store.ts        # Brief/candidate persistence
-│   │   │   ├── schedule-store.ts    # Schedule persistence
-│   │   │   ├── station-store.ts     # Station config
+│   │   │   ├── news-store.ts        # Brief/candidate persistence (SQLite)
+│   │   │   ├── schedule-store.ts    # Schedule persistence (SQLite)
+│   │   │   ├── station-store.ts     # Station config (SQLite)
 │   │   │   └── agents/
 │   │   │       ├── rss-scanner.ts
 │   │   │       ├── reddit-scout.ts
