@@ -17,6 +17,7 @@ Pulse is not a chatbot. It is a persistent, streaming media system: a complete r
 - [Key Features](#key-features)
 - [Architecture](#architecture)
 - [The Agent System](#the-agent-system)
+- [News Pipeline Deep-Dive](docs/news-pipeline.md)
 - [Tech Stack](#tech-stack)
 - [Getting Started](#getting-started)
 - [Usage](#usage)
@@ -269,6 +270,8 @@ Generated WAV tracks are stored as files under `agent-server/media/`.
 ---
 
 ## The Agent System
+
+> For a detailed breakdown of every agent — how it works, what sources it uses, a usefulness rating, a full pipeline walkthrough, and a 24/7 cost estimate — see **[docs/news-pipeline.md](docs/news-pipeline.md)**.
 
 ### News Collection (Scouts)
 
